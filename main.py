@@ -1,9 +1,12 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from supabase import create_client, Client
 import httpx
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -19,10 +22,12 @@ app = FastAPI(title="DermaPanel Backend")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+DIST = Path(__file__).parent / "dist"
 
 
 # ── Models ────────────────────────────────────────────────────────────────────
@@ -293,3 +298,13 @@ def patient_history(patient_id: str):
         .execute()
     )
     return res.data
+
+
+# ── Frontend (SPA) ─────────────────────────────────────────────────────────────
+
+if DIST.exists():
+    app.mount("/assets", StaticFiles(directory=DIST / "assets"), name="assets")
+
+    @app.get("/{full_path:path}")
+    def serve_spa(full_path: str):
+        return FileResponse(DIST / "index.html")
