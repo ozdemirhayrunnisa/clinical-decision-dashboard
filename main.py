@@ -49,7 +49,7 @@ def parse_puqai_response(data: dict) -> str:
         if data.get(key):
             return str(data[key])
 
-    return ""
+    return f"BİLİNMEYEN FORMAT: {str(data)}"
 
 app = FastAPI(title="DermaPanel Backend")
 
@@ -349,129 +349,28 @@ def calc_age(birth_date: str | None) -> str:
         return "?"
 
 
-async def fetch_clinical_data(patient_id: str) -> dict:
-    """Tüm klinik verileri asyncio.gather ile paralel çeker."""
+async def get_latest_disease(patient_id: str) -> str:
+    """Hastanın en son analiz sonucundaki hastalık adını döner."""
     loop = asyncio.get_event_loop()
-
-    def q_analyses():
-        return supabase.table("analysis_results") \
-            .select("disease_name, confidence, analyzed_at") \
-            .eq("patient_id", patient_id) \
-            .order("analyzed_at", desc=True).limit(5).execute().data or []
-
-    def q_visits():
-        return supabase.table("visits") \
-            .select("complaint, notes, visit_date") \
-            .eq("patient_id", patient_id) \
-            .order("visit_date", desc=True).limit(5).execute().data or []
-
-    def q_vitals():
-        return supabase.table("vitals") \
-            .select("*").eq("patient_id", patient_id) \
-            .order("recorded_at", desc=True).limit(3).execute().data or []
-
-    def q_lesions():
-        return supabase.table("lesion_measurements") \
-            .select("*").eq("patient_id", patient_id) \
-            .order("measured_at", desc=True).limit(5).execute().data or []
-
-    def q_labs():
-        return supabase.table("lab_results") \
-            .select("test_name, value, unit, ref_range, flag, trend, recorded_at") \
-            .eq("patient_id", patient_id) \
-            .order("recorded_at", desc=True).execute().data or []
-
-    analyses, visits, vitals, lesions, labs_raw = await asyncio.gather(
-        loop.run_in_executor(None, q_analyses),
-        loop.run_in_executor(None, q_visits),
-        loop.run_in_executor(None, q_vitals),
-        loop.run_in_executor(None, q_lesions),
-        loop.run_in_executor(None, q_labs),
+    res = await loop.run_in_executor(
+        None,
+        lambda: supabase.table("analysis_results")
+            .select("disease_name")
+            .eq("patient_id", patient_id)
+            .order("analyzed_at", desc=True)
+            .limit(1)
+            .execute()
     )
-    return {"analyses": analyses, "visits": visits, "vitals": vitals,
-            "lesions": lesions, "labs_raw": labs_raw}
+    return res.data[0]["disease_name"] if res.data else "Bilinmiyor"
 
 
-def build_puq_payload(
-    type_: str,
-    patient: dict,
-    message: str,
-    clinical: dict,
-    latest_diagnosis: dict | None = None,
-    history: list | None = None,
-) -> dict:
-    """Her iki endpoint için tutarlı PUQ.ai payload'ı oluşturur."""
-    analyses = clinical["analyses"]
-    labs_raw = clinical["labs_raw"]
-
-    gender_raw = patient.get("gender", "")
-    gender     = "Kadın" if gender_raw == "K" else ("Erkek" if gender_raw == "E" else gender_raw)
-
-    if latest_diagnosis is None:
-        if analyses:
-            a = analyses[0]
-            latest_diagnosis = {
-                "disease":    a["disease_name"],
-                "confidence": round((a.get("confidence") or 0) * 100),
-                "date":       a["analyzed_at"][:10],
-            }
-        else:
-            latest_diagnosis = {"disease": "Bilinmiyor", "confidence": 0, "date": ""}
-
-    risk_score = latest_diagnosis.get("confidence", 0)
-
-    payload: dict = {
-        "type":    type_,
-        "message": message,
-        "patient": {
-            "id":         patient.get("id", ""),
-            "name":       patient.get("full_name", "Bilinmiyor"),
-            "age":        calc_age(patient.get("birth_date")),
-            "gender":     gender,
-            "risk_score": risk_score,
-            "risk_label": "KRİTİK" if risk_score >= 70 else "STABİL",
-        },
-        "latest_diagnosis": latest_diagnosis,
-        "analyses": [
-            {
-                "date":       a["analyzed_at"][:10],
-                "disease":    a["disease_name"],
-                "confidence": round((a.get("confidence") or 0) * 100),
-            } for a in analyses
-        ],
-        "visits": [
-            {
-                "date":      v["visit_date"][:10],
-                "complaint": v.get("complaint") or "",
-                "notes":     v.get("notes") or "",
-            } for v in clinical["visits"]
-        ],
-        "vitals": [
-            {
-                "date":          v.get("recorded_at", "")[:10],
-                "heart_rate":    v.get("heart_rate"),
-                "temperature":   v.get("temperature"),
-                "o2_saturation": v.get("o2_saturation"),
-            } for v in clinical["vitals"]
-        ],
-        "lesions": [
-            {
-                "date":    l.get("measured_at", "")[:10],
-                "region":  l.get("region") or "",
-                "size_mm": l.get("size_mm"),
-            } for l in clinical["lesions"]
-        ],
-        "labs": {
-            "high":   [{"name": l["test_name"], "value": l["value"], "unit": l.get("unit",""), "ref": l.get("ref_range",""), "trend": l.get("trend","")} for l in labs_raw if l.get("flag") == "high"],
-            "low":    [{"name": l["test_name"], "value": l["value"], "unit": l.get("unit",""), "ref": l.get("ref_range",""), "trend": l.get("trend","")} for l in labs_raw if l.get("flag") == "low"],
-            "normal": [{"name": l["test_name"], "value": l["value"], "unit": l.get("unit","")} for l in labs_raw if l.get("flag") == "normal"],
-        },
+def build_puq_payload(patient_name: str, disease: str, message: str) -> dict:
+    """PUQ.ai workflow'unun beklediği fields: patient_name, disease, message."""
+    return {
+        "patient_name": patient_name,
+        "disease":      disease,
+        "message":      message,
     }
-
-    if history:
-        payload["history"] = [{"role": h["role"], "text": h["text"]} for h in history[-6:]]
-
-    return payload
 
 
 # ── Analysis (NovaVision → Supabase → PUQ.ai) ────────────────────────────────
@@ -516,28 +415,18 @@ async def analyze(body: AnalyzeRequest):
     }).execute()
     analysis_id = ar.data[0]["id"]
 
-    # 4. Hasta bilgisi + tüm klinik verileri paralel çek
-    loop    = asyncio.get_event_loop()
-    pt_task = loop.run_in_executor(
-        None, lambda: supabase.table("patients").select("*").eq("id", body.patient_id).single().execute()
+    # 4. Hasta adını çek
+    loop   = asyncio.get_event_loop()
+    pt_res = await loop.run_in_executor(
+        None, lambda: supabase.table("patients").select("full_name").eq("id", body.patient_id).single().execute()
     )
-    clinical_task = fetch_clinical_data(body.patient_id)
-    pt_res, clinical = await asyncio.gather(pt_task, clinical_task)
-    patient = pt_res.data or {}
+    patient_name = (pt_res.data or {}).get("full_name", "Bilinmiyor")
 
     # 5. Payload oluştur
-    latest_diagnosis = {
-        "disease":    disease_name,
-        "confidence": round(confidence * 100),
-        "date":       date.today().isoformat(),
-        "image_url":  body.image_url,
-    }
     puq_payload = build_puq_payload(
-        type_="analyze",
-        patient=patient,
-        message="Yeni görüntü analizi tamamlandı. Tüm klinik verilerle bütünleşik klinik rapor hazırla.",
-        clinical=clinical,
-        latest_diagnosis=latest_diagnosis,
+        patient_name=patient_name,
+        disease=disease_name,
+        message=f"Yeni görüntü analizi tamamlandı. {disease_name} tespit edildi (%{round(confidence*100)} güven). Klinik bulgular ve öneriler için detaylı rapor hazırla.",
     )
     if is_mock:
         puq_payload["is_mock"] = True
@@ -579,21 +468,18 @@ async def analyze(body: AnalyzeRequest):
 
 @app.post("/chat")
 async def chat(body: ChatRequest):
-    # Hasta bilgisi + klinik veriler paralel
-    loop    = asyncio.get_event_loop()
-    pt_task = loop.run_in_executor(
-        None, lambda: supabase.table("patients").select("*").eq("id", body.patient_id).single().execute()
+    loop = asyncio.get_event_loop()
+    pt_task      = loop.run_in_executor(
+        None, lambda: supabase.table("patients").select("full_name").eq("id", body.patient_id).single().execute()
     )
-    clinical_task = fetch_clinical_data(body.patient_id)
-    pt_res, clinical = await asyncio.gather(pt_task, clinical_task)
-    patient = pt_res.data or {}
+    disease_task = get_latest_disease(body.patient_id)
+    pt_res, disease = await asyncio.gather(pt_task, disease_task)
 
-    puq_payload = build_puq_payload(
-        type_="chat",
-        patient=patient,
+    patient_name = (pt_res.data or {}).get("full_name", "Bilinmiyor")
+    puq_payload  = build_puq_payload(
+        patient_name=patient_name,
+        disease=disease,
         message=body.message,
-        clinical=clinical,
-        history=[h.model_dump() for h in body.history] if body.history else None,
     )
 
     async with httpx.AsyncClient(timeout=60) as client:
