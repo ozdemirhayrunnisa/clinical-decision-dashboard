@@ -483,48 +483,72 @@ function NovaVisionViewer({latestAnalysis}) {
 }
 
 /* ── MedicalHistory ──────────────────────────────────────── */
-function MedicalHistory({visits}) {
-  const items = visits && visits.length > 0
-    ? visits.map((v, i) => ({
-        date: new Date(v.visit_date).toLocaleDateString("tr-TR",{day:"2-digit",month:"short",year:"numeric"}),
-        title: v.complaint || "Muayene",
-        notes: v.notes || "",
-        isCurrent: i === 0,
-      }))
-    : null;
-
-  const subtitle = items ? `${items.length} ziyaret` : "Veri bekleniyor";
-
+function MedicalHistory({visits, onVisitClick, onNewVisit, hasPatient}) {
+  const subtitle = visits?.length ? `${visits.length} ziyaret` : "Kayıt yok";
   return (
     <PanelShell icon={Clock} title="Ziyaret Geçmişi" subtitle={subtitle}
-                right={<button className="text-[11px] hover:text-zinc-200" style={{color:C.textMid}}>Tümünü gör →</button>}>
+                right={
+                  hasPatient && (
+                    <button onClick={onNewVisit}
+                            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded"
+                            style={{background:`${C.primary}1a`,border:`1px solid ${C.primary}40`,color:"#c4b5fd"}}>
+                      <Plus size={11}/>Yeni
+                    </button>
+                  )
+                }>
       <div className="flex-1 overflow-y-auto px-4 py-3">
-        {!items ? (
-          <div className="text-[12px] text-center py-6" style={{color:C.textLo}}>
-            Henüz ziyaret kaydı yok.
+        {!visits?.length ? (
+          <div className="text-[12px] text-center py-6 space-y-2" style={{color:C.textLo}}>
+            <div>Henüz ziyaret kaydı yok.</div>
+            {hasPatient && (
+              <button onClick={onNewVisit}
+                      className="text-[11px] px-3 py-1.5 rounded-lg"
+                      style={{background:`${C.primary}1a`,border:`1px solid ${C.primary}40`,color:"#c4b5fd"}}>
+                + Yeni Muayene Başlat
+              </button>
+            )}
           </div>
         ) : (
           <div className="relative">
             <div className="absolute left-[7px] top-1 bottom-1 w-px"
                  style={{background:`linear-gradient(to bottom,${C.border},${C.primary}66)`}}/>
-            {items.map((item,idx)=>{
-              const cur=item.isCurrent;
+            {visits.map((v, idx) => {
+              const cur = idx === 0;
+              const date = new Date(v.visit_date).toLocaleDateString("tr-TR",{day:"2-digit",month:"short",year:"numeric"});
+              const analysisCount = v.analysis_results?.length || 0;
               return (
-                <div key={idx} className="relative pl-7 pb-4 last:pb-0">
+                <button key={v.id} onClick={()=>onVisitClick(v)}
+                        className="relative w-full text-left pl-7 pb-4 last:pb-0 group">
                   {cur
-                    ?<span className="absolute left-0 top-1 h-[15px] w-[15px] rounded-full flex items-center justify-center"
-                            style={{background:`${C.primary}33`,boxShadow:`0 0 0 4px ${C.primary}15`}}>
+                    ? <span className="absolute left-0 top-1 h-[15px] w-[15px] rounded-full flex items-center justify-center"
+                             style={{background:`${C.primary}33`,boxShadow:`0 0 0 4px ${C.primary}15`}}>
                         <span className="h-[7px] w-[7px] rounded-full animate-pulse" style={{background:C.primary}}/>
                       </span>
-                    :<span className="absolute left-[3px] top-1.5 h-[9px] w-[9px] rounded-full"
-                            style={{background:C.border,boxShadow:`0 0 0 4px ${C.surface}`}}/>
+                    : <span className="absolute left-[3px] top-1.5 h-[9px] w-[9px] rounded-full"
+                             style={{background:C.border,boxShadow:`0 0 0 4px ${C.surface}`}}/>
                   }
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className="text-[12px] font-medium" style={{color:cur?"#c4b5fd":C.textHi}}>{item.title}</span>
-                    <span className="text-[10.5px] font-mono whitespace-nowrap" style={{color:C.textLo}}>{item.date}</span>
+                    <span className="text-[12px] font-medium group-hover:text-violet-300 transition-colors"
+                          style={{color:cur?"#c4b5fd":C.textHi}}>
+                      {v.complaint || "Muayene"}
+                    </span>
+                    <span className="text-[10.5px] font-mono whitespace-nowrap" style={{color:C.textLo}}>{date}</span>
                   </div>
-                  {item.notes && <div className="text-[11.5px] mt-0.5" style={{color:C.textMid}}>{item.notes}</div>}
-                </div>
+                  {v.notes && (
+                    <div className="text-[11px] mt-0.5 line-clamp-1" style={{color:C.textMid}}>{v.notes}</div>
+                  )}
+                  <div className="flex items-center gap-3 mt-1">
+                    {analysisCount > 0 && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded"
+                            style={{background:`${C.accent}15`,color:"#67e8f9",border:`1px solid ${C.accent}30`}}>
+                        {analysisCount} analiz
+                      </span>
+                    )}
+                    <span className="text-[10px] opacity-0 group-hover:opacity-100 transition-opacity" style={{color:C.textLo}}>
+                      Düzenle →
+                    </span>
+                  </div>
+                </button>
               );
             })}
           </div>
@@ -682,13 +706,13 @@ function ChatPanel({messages, setMessages, analyzing}) {
 }
 
 /* ── Tabs ────────────────────────────────────────────────── */
-function SummaryTab({chatMessages, setMessages, analyzing, latestAnalysis, visits}) {
+function SummaryTab({chatMessages, setMessages, analyzing, latestAnalysis, visits, onVisitClick, onNewVisit, hasPatient}) {
   return (
     <div className="flex-1 grid grid-cols-12 gap-3 p-3 overflow-hidden">
       <div className="col-span-12 lg:col-span-8 flex flex-col gap-3 overflow-y-auto min-h-0 pr-1">
         <NovaVisionViewer latestAnalysis={latestAnalysis}/>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 min-h-[280px]">
-          <MedicalHistory visits={visits}/><VitalsPanel/>
+          <MedicalHistory visits={visits} onVisitClick={onVisitClick} onNewVisit={onNewVisit} hasPatient={hasPatient}/><VitalsPanel/>
         </div>
       </div>
       <div className="col-span-12 lg:col-span-4 min-h-0 flex flex-col">
@@ -846,31 +870,45 @@ function LabTab() {
   );
 }
 
-/* ── AnalyzeModal ────────────────────────────────────────── */
-function AnalyzeModal({patient, onClose, onSubmit}) {
+/* ── NewVisitModal ───────────────────────────────────────── */
+function NewVisitModal({patient, onClose, onSave}) {
   const [complaint, setComplaint] = useState("");
-  const [imageUrl, setImageUrl]   = useState("");
+  const [notes, setNotes]         = useState("");
+  const [saving, setSaving]       = useState(false);
 
-  const handleSubmit = () => {
-    onSubmit({
-      complaint: complaint.trim() || "Rutin dermatoloji kontrolü",
-      image_url: imageUrl.trim()  || "https://example.com/dermoscopy.jpg",
-    });
-    onClose();
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch(`${API}/visits`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          patient_id: patient.dbId,
+          complaint: complaint.trim() || "Rutin muayene",
+          notes: notes.trim() || undefined,
+        }),
+      });
+      const visit = await res.json();
+      onSave(visit);
+    } finally { setSaving(false); }
   };
+
+  const inp = "w-full rounded-lg px-3 py-2 text-[13px] text-zinc-100 placeholder:text-zinc-600 focus:outline-none";
+  const focus = e => (e.target.style.borderColor = C.primary+"66");
+  const blur  = e => (e.target.style.borderColor = C.border);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center"
          style={{background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)"}}>
-      <div className="w-[480px] rounded-2xl flex flex-col" style={{background:C.surface,border:`1px solid ${C.border}`}}>
+      <div className="w-[500px] rounded-2xl flex flex-col" style={{background:C.surface,border:`1px solid ${C.border}`}}>
         <div className="px-5 py-4 flex items-center justify-between" style={{borderBottom:`1px solid ${C.border}`}}>
           <div className="flex items-center gap-2.5">
             <div className="h-7 w-7 rounded-lg flex items-center justify-center"
-                 style={{background:`${C.accent}1a`,border:`1px solid ${C.accent}40`}}>
-              <Sparkles size={14} style={{color:C.accent}}/>
+                 style={{background:`${C.primary}1a`,border:`1px solid ${C.primary}40`}}>
+              <Stethoscope size={14} style={{color:C.primary}}/>
             </div>
             <div>
-              <div className="text-[15px] font-semibold text-zinc-100">PUQ.ai Analiz</div>
+              <div className="text-[15px] font-semibold text-zinc-100">Yeni Muayene</div>
               <div className="text-[11px]" style={{color:C.textLo}}>{patient.name}</div>
             </div>
           </div>
@@ -878,32 +916,188 @@ function AnalyzeModal({patient, onClose, onSubmit}) {
         </div>
         <div className="px-5 py-4 space-y-4">
           <div>
-            <label className="text-[11px] uppercase tracking-wider block mb-1.5" style={{color:C.textLo}}>Şikayet / Notlar</label>
-            <textarea value={complaint} onChange={e=>setComplaint(e.target.value)}
-                      placeholder="Örn: Sırtta şüpheli leke, renk değişimi var…"
-                      rows={3}
-                      className="w-full rounded-lg px-3 py-2 text-[13px] text-zinc-100 placeholder:text-zinc-600 focus:outline-none resize-none"
-                      style={{background:C.bg,border:`1px solid ${C.border}`}}
-                      onFocus={e=>(e.target.style.borderColor=C.accent+"66")}
-                      onBlur={e=>(e.target.style.borderColor=C.border)}/>
+            <label className="text-[11px] uppercase tracking-wider block mb-1.5" style={{color:C.textLo}}>Şikayet *</label>
+            <input value={complaint} onChange={e=>setComplaint(e.target.value)}
+                   placeholder="Örn: Sol omuzda kaşıntılı leke, renk değişimi var"
+                   className={inp} style={{background:C.bg,border:`1px solid ${C.border}`}}
+                   onFocus={focus} onBlur={blur}/>
           </div>
           <div>
-            <label className="text-[11px] uppercase tracking-wider block mb-1.5" style={{color:C.textLo}}>Görsel URL <span style={{color:C.textLo}}>(opsiyonel)</span></label>
-            <input value={imageUrl} onChange={e=>setImageUrl(e.target.value)}
-                   placeholder="https://… (boş bırakılırsa mock görsel kullanılır)"
-                   className="w-full rounded-lg px-3 py-2 text-[13px] text-zinc-100 placeholder:text-zinc-600 focus:outline-none"
-                   style={{background:C.bg,border:`1px solid ${C.border}`}}
-                   onFocus={e=>(e.target.style.borderColor=C.accent+"66")}
-                   onBlur={e=>(e.target.style.borderColor=C.border)}/>
-          </div>
-          <div className="rounded-lg p-3 text-[11px] leading-relaxed" style={{background:`${C.accent}0d`,border:`1px solid ${C.accent}25`,color:C.textMid}}>
-            NovaVision görüntü analizi (mock) + PUQ.ai AI raporu çalıştırılacak ve Supabase'e kaydedilecektir.
+            <label className="text-[11px] uppercase tracking-wider block mb-1.5" style={{color:C.textLo}}>Muayene Bulguları</label>
+            <textarea value={notes} onChange={e=>setNotes(e.target.value)}
+                      placeholder="Fizik muayene bulguları, ABCDE skoru, ön tanı notları…"
+                      rows={4}
+                      className={`${inp} resize-none`}
+                      style={{background:C.bg,border:`1px solid ${C.border}`}}
+                      onFocus={focus} onBlur={blur}/>
           </div>
         </div>
         <div className="px-5 py-3 flex justify-end gap-2" style={{borderTop:`1px solid ${C.border}`}}>
           <button onClick={onClose} className="px-4 py-2 rounded-lg text-[13px]"
                   style={{border:`1px solid ${C.border}`,color:C.textMid}}>İptal</button>
-          <button onClick={handleSubmit}
+          <button onClick={handleSave} disabled={saving}
+                  className="px-5 py-2 rounded-lg text-[13px] font-medium text-white flex items-center gap-1.5 disabled:opacity-50"
+                  style={{background:`linear-gradient(135deg,${C.primary},${C.primaryDim})`,boxShadow:`0 4px 12px -4px ${C.primary}80`}}>
+            {saving ? <Loader2 size={14} className="animate-spin"/> : <Check size={14}/>}
+            {saving ? "Kaydediliyor…" : "Muayeneyi Kaydet"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── VisitDetailModal ────────────────────────────────────── */
+function VisitDetailModal({visit, patient, onClose, onAnalyze, onUpdated}) {
+  const [complaint, setComplaint] = useState(visit.complaint || "");
+  const [notes, setNotes]         = useState(visit.notes || "");
+  const [saving, setSaving]       = useState(false);
+  const [saved, setSaved]         = useState(false);
+
+  const visitDate = new Date(visit.visit_date).toLocaleString("tr-TR",{
+    day:"2-digit", month:"long", year:"numeric", hour:"2-digit", minute:"2-digit"
+  });
+  const analyses = visit.analysis_results || [];
+
+  const handleSave = async () => {
+    setSaving(true); setSaved(false);
+    try {
+      const res = await fetch(`${API}/visits/${visit.id}`, {
+        method: "PATCH",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          complaint: complaint.trim() || undefined,
+          notes:     notes.trim()     || undefined,
+        }),
+      });
+      const updated = await res.json();
+      onUpdated(updated);
+      setSaved(true);
+      setTimeout(()=>setSaved(false), 2000);
+    } finally { setSaving(false); }
+  };
+
+  const inp = "w-full rounded-lg px-3 py-2 text-[13px] text-zinc-100 placeholder:text-zinc-600 focus:outline-none";
+  const focus = e => (e.target.style.borderColor = C.primary+"66");
+  const blur  = e => (e.target.style.borderColor = C.border);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center"
+         style={{background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)"}}>
+      <div className="w-[560px] rounded-2xl flex flex-col max-h-[90vh]"
+           style={{background:C.surface,border:`1px solid ${C.border}`}}>
+        <div className="px-5 py-4 flex items-center justify-between" style={{borderBottom:`1px solid ${C.border}`}}>
+          <div className="flex items-center gap-2.5">
+            <div className="h-7 w-7 rounded-lg flex items-center justify-center"
+                 style={{background:`${C.primary}1a`,border:`1px solid ${C.primary}40`}}>
+              <Clock size={14} style={{color:C.primary}}/>
+            </div>
+            <div>
+              <div className="text-[15px] font-semibold text-zinc-100">Muayene Detayı</div>
+              <div className="text-[11px]" style={{color:C.textLo}}>{visitDate} · {patient.name}</div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{color:C.textMid}}><X size={16}/></button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          <div>
+            <label className="text-[11px] uppercase tracking-wider block mb-1.5" style={{color:C.textLo}}>Şikayet</label>
+            <input value={complaint} onChange={e=>setComplaint(e.target.value)}
+                   placeholder="Şikayet giriniz…"
+                   className={inp} style={{background:C.bg,border:`1px solid ${C.border}`}}
+                   onFocus={focus} onBlur={blur}/>
+          </div>
+          <div>
+            <label className="text-[11px] uppercase tracking-wider block mb-1.5" style={{color:C.textLo}}>Muayene Bulguları / Notlar</label>
+            <textarea value={notes} onChange={e=>setNotes(e.target.value)}
+                      placeholder="Fizik muayene bulguları, ABCDE skoru, ön tanı, follow-up planı…"
+                      rows={5}
+                      className={`${inp} resize-none`}
+                      style={{background:C.bg,border:`1px solid ${C.border}`}}
+                      onFocus={focus} onBlur={blur}/>
+          </div>
+
+          {analyses.length > 0 && (
+            <div>
+              <label className="text-[11px] uppercase tracking-wider block mb-1.5" style={{color:C.textLo}}>Bu Ziyarete Bağlı Analizler</label>
+              <div className="space-y-1.5">
+                {analyses.map(a => (
+                  <div key={a.id} className="flex items-center gap-3 px-3 py-2 rounded-lg"
+                       style={{background:C.bg,border:`1px solid ${C.border}`}}>
+                    <div className="h-2 w-2 rounded-full" style={{background:a.confidence>=0.7?C.rose:C.emerald}}/>
+                    <span className="text-[12px] text-zinc-100 flex-1">{a.disease_name}</span>
+                    <span className="text-[11px]" style={{color:C.textMid}}>Güven: {Math.round((a.confidence||0)*100)}%</span>
+                    <span className="text-[10.5px] font-mono" style={{color:C.textLo}}>
+                      {new Date(a.analyzed_at).toLocaleDateString("tr-TR")}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 py-3 flex items-center justify-between gap-2" style={{borderTop:`1px solid ${C.border}`}}>
+          <button onClick={()=>{onAnalyze(visit); onClose();}}
+                  className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[12.5px] font-medium"
+                  style={{background:`${C.accent}1a`,border:`1px solid ${C.accent}55`,color:"#67e8f9"}}>
+            <Sparkles size={13}/>Bu Ziyarete Analiz Ekle
+          </button>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-2 rounded-lg text-[13px]"
+                    style={{border:`1px solid ${C.border}`,color:C.textMid}}>Kapat</button>
+            <button onClick={handleSave} disabled={saving}
+                    className="px-5 py-2 rounded-lg text-[13px] font-medium text-white flex items-center gap-1.5 disabled:opacity-50"
+                    style={{background:`linear-gradient(135deg,${C.primary},${C.primaryDim})`,boxShadow:`0 4px 12px -4px ${C.primary}80`}}>
+              {saving ? <Loader2 size={14} className="animate-spin"/> : saved ? <Check size={14}/> : <Check size={14}/>}
+              {saving ? "Kaydediliyor…" : saved ? "Kaydedildi ✓" : "Kaydet"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── AnalyzeForVisitModal ────────────────────────────────── */
+function AnalyzeForVisitModal({visit, patient, onClose, onSubmit}) {
+  const [imageUrl, setImageUrl] = useState("");
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center"
+         style={{background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)"}}>
+      <div className="w-[440px] rounded-2xl flex flex-col" style={{background:C.surface,border:`1px solid ${C.border}`}}>
+        <div className="px-5 py-4 flex items-center justify-between" style={{borderBottom:`1px solid ${C.border}`}}>
+          <div className="flex items-center gap-2.5">
+            <div className="h-7 w-7 rounded-lg flex items-center justify-center"
+                 style={{background:`${C.accent}1a`,border:`1px solid ${C.accent}40`}}>
+              <Sparkles size={14} style={{color:C.accent}}/>
+            </div>
+            <div>
+              <div className="text-[15px] font-semibold text-zinc-100">Analiz Ekle</div>
+              <div className="text-[11px]" style={{color:C.textLo}}>{visit.complaint || "Muayene"} · {patient.name}</div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{color:C.textMid}}><X size={16}/></button>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <div>
+            <label className="text-[11px] uppercase tracking-wider block mb-1.5" style={{color:C.textLo}}>Görsel URL <span style={{color:C.textLo}}>(opsiyonel)</span></label>
+            <input value={imageUrl} onChange={e=>setImageUrl(e.target.value)}
+                   placeholder="https://… (boş = mock görsel)"
+                   className="w-full rounded-lg px-3 py-2 text-[13px] text-zinc-100 placeholder:text-zinc-600 focus:outline-none"
+                   style={{background:C.bg,border:`1px solid ${C.border}`}}
+                   onFocus={e=>(e.target.style.borderColor=C.accent+"66")}
+                   onBlur={e=>(e.target.style.borderColor=C.border)}/>
+          </div>
+          <div className="text-[11px] px-3 py-2 rounded-lg" style={{background:`${C.accent}0d`,border:`1px solid ${C.accent}25`,color:C.textMid}}>
+            NovaVision (mock) + PUQ.ai raporu bu ziyarete bağlı olarak kaydedilecek.
+          </div>
+        </div>
+        <div className="px-5 py-3 flex justify-end gap-2" style={{borderTop:`1px solid ${C.border}`}}>
+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-[13px]"
+                  style={{border:`1px solid ${C.border}`,color:C.textMid}}>İptal</button>
+          <button onClick={()=>onSubmit({image_url: imageUrl.trim() || "https://example.com/dermoscopy.jpg"})}
                   className="px-5 py-2 rounded-lg text-[13px] font-medium text-white flex items-center gap-1.5"
                   style={{background:`linear-gradient(135deg,${C.accent},${C.accentDim})`,boxShadow:`0 4px 12px -4px ${C.accent}80`}}>
             <Sparkles size={14}/>Analizi Başlat
@@ -1062,7 +1256,7 @@ function PrescriptionsTab({prescriptions,openModal}) {
 }
 
 /* ── ActionBar ───────────────────────────────────────────── */
-function ActionBar({patient, openPrescription, onAnalyze, analyzing}) {
+function ActionBar({patient, openPrescription, onNewVisit, analyzing}) {
   const crit=patient.status==="critical";
   return (
     <div className="h-14 shrink-0 px-5 flex items-center gap-3" style={{background:C.surface,borderTop:`1px solid ${C.border}`}}>
@@ -1080,11 +1274,11 @@ function ActionBar({patient, openPrescription, onAnalyze, analyzing}) {
               style={{background:`${C.primary}15`,border:`1px solid ${C.primary}50`,color:"#c4b5fd"}}>
         <Pill size={14}/>Reçete Oluştur
       </button>
-      <button onClick={onAnalyze} disabled={analyzing || !patient.dbId}
+      <button onClick={onNewVisit} disabled={analyzing || !patient.dbId}
               className="flex items-center gap-2 px-4 py-2 rounded-lg text-[12.5px] font-medium transition-all hover:opacity-90 disabled:opacity-50"
-              style={{background:`linear-gradient(135deg,${C.accent}22,${C.accent}11)`,border:`1px solid ${C.accent}55`,color:"#67e8f9"}}>
-        {analyzing ? <Loader2 size={14} className="animate-spin"/> : <FileDown size={14}/>}
-        {analyzing ? "Rapor Hazırlanıyor…" : "PUQ.ai Raporu Al"}
+              style={{background:`linear-gradient(135deg,${C.primary}33,${C.primary}11)`,border:`1px solid ${C.primary}55`,color:"#c4b5fd"}}>
+        {analyzing ? <Loader2 size={14} className="animate-spin"/> : <Stethoscope size={14}/>}
+        {analyzing ? "Analiz Çalışıyor…" : "Yeni Muayene Başlat"}
       </button>
     </div>
   );
@@ -1100,7 +1294,9 @@ export default function Dashboard() {
   const [showAddPatient, setShowAddPatient] = useState(false);
   const [chatMessages, setChatMessages] = useState(INITIAL_CHAT);
   const [analyzing, setAnalyzing] = useState(false);
-  const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
+  const [showNewVisit, setShowNewVisit]       = useState(false);
+  const [selectedVisit, setSelectedVisit]     = useState(null);
+  const [pendingVisitAnalysis, setPendingVisitAnalysis] = useState(null);
   const [latestAnalysis, setLatestAnalysis] = useState(null);
   const [visits, setVisits] = useState([]);
 
@@ -1165,7 +1361,7 @@ export default function Dashboard() {
       .catch(() => setPrescriptions([]));
   }, [activePatient?.dbId]);
 
-  const analyze = async ({complaint, image_url}) => {
+  const analyze = async ({complaint, image_url, visit_id}) => {
     const patientId = activePatient.dbId;
     if (!patientId || analyzing) return;
 
@@ -1173,7 +1369,7 @@ export default function Dashboard() {
     setActiveTab("Özet");
     setChatMessages(m => [...m, {
       role: "doc",
-      text: `Şikayet: ${complaint}`,
+      text: `Analiz başlatıldı${complaint ? ` · ${complaint}` : ""}`,
       time: now()
     }]);
 
@@ -1181,7 +1377,7 @@ export default function Dashboard() {
       const res = await fetch(`${API}/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ patient_id: patientId, image_url, complaint })
+        body: JSON.stringify({ patient_id: patientId, image_url, complaint, visit_id })
       });
       const data = await res.json();
       const report = data.report && data.report !== "PUQ.ai rapor oluşturamadı."
@@ -1257,16 +1453,53 @@ export default function Dashboard() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Header patient={activePatient} activeTab={activeTab} setActiveTab={setActiveTab} latestAnalysis={latestAnalysis}/>
         <main className="flex-1 overflow-hidden flex flex-col min-h-0">
-          {activeTab==="Özet"       && <SummaryTab chatMessages={chatMessages} setMessages={setChatMessages} analyzing={analyzing} latestAnalysis={latestAnalysis} visits={visits}/>}
+          {activeTab==="Özet"       && <SummaryTab chatMessages={chatMessages} setMessages={setChatMessages} analyzing={analyzing} latestAnalysis={latestAnalysis} visits={visits} onVisitClick={setSelectedVisit} onNewVisit={()=>setShowNewVisit(true)} hasPatient={!!activePatient?.dbId}/>}
           {activeTab==="Görüntüler" && <ImagesTab/>}
           {activeTab==="Lab"        && <LabTab/>}
           {activeTab==="Reçeteler"  && <PrescriptionsTab prescriptions={prescriptions} openModal={openModal}/>}
         </main>
-        <ActionBar patient={activePatient} openPrescription={openModal} onAnalyze={()=>setShowAnalyzeModal(true)} analyzing={analyzing}/>
+        <ActionBar patient={activePatient} openPrescription={openModal} onNewVisit={()=>setShowNewVisit(true)} analyzing={analyzing}/>
       </div>
       {showModal && <PrescriptionModal onClose={closeModal} onSave={savePrescription}/>}
       {showAddPatient && <AddPatientModal onClose={()=>setShowAddPatient(false)} onSave={handlePatientAdded}/>}
-      {showAnalyzeModal && <AnalyzeModal patient={activePatient} onClose={()=>setShowAnalyzeModal(false)} onSubmit={analyze}/>}
+      {showNewVisit && (
+        <NewVisitModal
+          patient={activePatient}
+          onClose={()=>setShowNewVisit(false)}
+          onSave={visit => {
+            setVisits(vs => [visit, ...vs]);
+            setShowNewVisit(false);
+            setSelectedVisit(visit);
+          }}
+        />
+      )}
+      {selectedVisit && (
+        <VisitDetailModal
+          visit={selectedVisit}
+          patient={activePatient}
+          onClose={()=>{ setSelectedVisit(null); setPendingVisitAnalysis(null); }}
+          onAnalyze={visit => { setPendingVisitAnalysis(visit); }}
+          onUpdated={updated => {
+            setVisits(vs => vs.map(v => v.id === updated.id ? {...v, ...updated} : v));
+            setSelectedVisit(s => ({...s, ...updated}));
+          }}
+        />
+      )}
+      {pendingVisitAnalysis && !selectedVisit && (
+        <AnalyzeForVisitModal
+          visit={pendingVisitAnalysis}
+          patient={activePatient}
+          onClose={()=>setPendingVisitAnalysis(null)}
+          onSubmit={({image_url})=>{
+            setPendingVisitAnalysis(null);
+            analyze({
+              complaint: pendingVisitAnalysis.complaint,
+              image_url,
+              visit_id: pendingVisitAnalysis.id,
+            });
+          }}
+        />
+      )}
     </div>
   );
 }
