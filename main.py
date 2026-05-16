@@ -45,6 +45,13 @@ class VisitCreate(BaseModel):
     doctor_id: str | None = None
 
 
+class PrescriptionCreate(BaseModel):
+    patient_id: str
+    diagnosis: str
+    drugs: list  # [{"name": str, "dose": str, "duration": str}]
+    status: str = "active"
+
+
 class AnalyzeRequest(BaseModel):
     patient_id: str
     image_url: str
@@ -73,6 +80,12 @@ def get_patient(patient_id: str):
     return res.data
 
 
+@app.delete("/patients/{patient_id}", status_code=204)
+def delete_patient(patient_id: str):
+    supabase.table("patients").delete().eq("id", patient_id).execute()
+    return
+
+
 # ── Visits ────────────────────────────────────────────────────────────────────
 
 @app.get("/patients/{patient_id}/visits")
@@ -84,6 +97,31 @@ def list_visits(patient_id: str):
 @app.post("/visits", status_code=201)
 def create_visit(body: VisitCreate):
     res = supabase.table("visits").insert(body.model_dump(exclude_none=True)).execute()
+    return res.data[0]
+
+
+# ── Prescriptions ─────────────────────────────────────────────────────────────
+
+@app.get("/patients/{patient_id}/prescriptions")
+def list_prescriptions(patient_id: str):
+    res = supabase.table("prescriptions").select("*").eq("patient_id", patient_id).order("created_at", desc=True).execute()
+    return res.data
+
+
+@app.post("/prescriptions", status_code=201)
+def create_prescription(body: PrescriptionCreate):
+    res = supabase.table("prescriptions").insert({
+        "patient_id": body.patient_id,
+        "diagnosis":  body.diagnosis,
+        "drugs":      body.drugs,
+        "status":     body.status,
+    }).execute()
+    return res.data[0]
+
+
+@app.patch("/prescriptions/{prescription_id}")
+def update_prescription_status(prescription_id: str, status: str):
+    res = supabase.table("prescriptions").update({"status": status}).eq("id", prescription_id).execute()
     return res.data[0]
 
 
