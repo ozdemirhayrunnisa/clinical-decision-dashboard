@@ -626,18 +626,16 @@ function VitalsPanel() {
 }
 
 /* ── ChatPanel ───────────────────────────────────────────── */
-function ChatPanel({messages, setMessages, analyzing}) {
+function ChatPanel({messages, setMessages, analyzing, onSend, chatLoading}) {
   const [input,setInput]=useState("");
   const endRef=useRef(null);
-  useEffect(()=>{endRef.current?.scrollIntoView({behavior:"smooth"});},[messages]);
+  useEffect(()=>{endRef.current?.scrollIntoView({behavior:"smooth"});},[messages, chatLoading]);
 
   const send=()=>{
-    if(!input.trim())return;
-    setMessages(m=>[...m,{role:"doc",text:input,time:now()}]);
+    if(!input.trim() || chatLoading) return;
+    const msg = input.trim();
     setInput("");
-    setTimeout(()=>{
-      setMessages(m=>[...m,{role:"ai",text:"Anlaşıldı. Veritabanını taradım — bu profilde 24 saat içinde dermoskopi + ABCDE yeniden değerlendirme önerilen klinik path %71.",time:now()}]);
-    },700);
+    onSend(msg);
   };
 
   return (
@@ -678,7 +676,18 @@ function ChatPanel({messages, setMessages, analyzing}) {
               <Loader2 size={11} className="animate-spin" style={{color:"#c4b5fd"}}/>
             </div>
             <div className="text-[12px] px-2.5 py-2 rounded-lg" style={{background:C.surfaceAlt,border:`1px solid ${C.border}`,color:C.textLo}}>
-              PUQ.ai raporu hazırlanıyor…
+              PUQ.ai analiz raporu hazırlanıyor…
+            </div>
+          </div>
+        )}
+        {chatLoading && (
+          <div className="flex gap-2">
+            <div className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center"
+                 style={{background:`linear-gradient(135deg,${C.primary}33,${C.accent}33)`,border:`1px solid ${C.primary}55`}}>
+              <Loader2 size={11} className="animate-spin" style={{color:"#c4b5fd"}}/>
+            </div>
+            <div className="text-[12px] px-2.5 py-2 rounded-lg" style={{background:C.surfaceAlt,border:`1px solid ${C.border}`,color:C.textLo}}>
+              PUQ.ai yanıt hazırlıyor…
             </div>
           </div>
         )}
@@ -688,12 +697,14 @@ function ChatPanel({messages, setMessages, analyzing}) {
         <div className="relative flex items-center gap-2 rounded-lg" style={{background:C.bg,border:`1px solid ${C.border}`}}>
           <MessageSquare size={13} className="ml-2.5" style={{color:C.textLo}}/>
           <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&send()}
-                 placeholder="Şikayet, soru veya komut yazın…"
-                 className="flex-1 bg-transparent py-2 text-[12px] text-zinc-100 placeholder:text-zinc-600 focus:outline-none"/>
-          <button onClick={send}
-                  className="m-1 px-2.5 py-1 rounded-md text-white text-[11px] font-medium flex items-center gap-1"
+                 placeholder="Soru veya not yazın… (Enter ile gönder)"
+                 disabled={chatLoading}
+                 className="flex-1 bg-transparent py-2 text-[12px] text-zinc-100 placeholder:text-zinc-600 focus:outline-none disabled:opacity-50"/>
+          <button onClick={send} disabled={chatLoading || !input.trim()}
+                  className="m-1 px-2.5 py-1 rounded-md text-white text-[11px] font-medium flex items-center gap-1 disabled:opacity-40"
                   style={{background:`linear-gradient(135deg,${C.primary},${C.primaryDim})`}}>
-            <Send size={11}/>Gönder
+            {chatLoading ? <Loader2 size={11} className="animate-spin"/> : <Send size={11}/>}
+            Gönder
           </button>
         </div>
         <div className="flex items-center gap-2 mt-2 text-[10px]" style={{color:C.textLo}}>
@@ -706,7 +717,7 @@ function ChatPanel({messages, setMessages, analyzing}) {
 }
 
 /* ── Tabs ────────────────────────────────────────────────── */
-function SummaryTab({chatMessages, setMessages, analyzing, latestAnalysis, visits, onVisitClick, onNewVisit, hasPatient}) {
+function SummaryTab({chatMessages, setMessages, analyzing, chatLoading, onSend, latestAnalysis, visits, onVisitClick, onNewVisit, hasPatient}) {
   return (
     <div className="flex-1 grid grid-cols-12 gap-3 p-3 overflow-hidden">
       <div className="col-span-12 lg:col-span-8 flex flex-col gap-3 overflow-y-auto min-h-0 pr-1">
@@ -716,7 +727,7 @@ function SummaryTab({chatMessages, setMessages, analyzing, latestAnalysis, visit
         </div>
       </div>
       <div className="col-span-12 lg:col-span-4 min-h-0 flex flex-col">
-        <ChatPanel messages={chatMessages} setMessages={setMessages} analyzing={analyzing}/>
+        <ChatPanel messages={chatMessages} setMessages={setMessages} analyzing={analyzing} chatLoading={chatLoading} onSend={onSend}/>
       </div>
     </div>
   );
@@ -1293,7 +1304,8 @@ export default function Dashboard() {
   const [showModal, setShowModal] = useState(false);
   const [showAddPatient, setShowAddPatient] = useState(false);
   const [chatMessages, setChatMessages] = useState(INITIAL_CHAT);
-  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzing, setAnalyzing]   = useState(false);
+  const [chatLoading, setChatLoading] = useState(false);
   const [showNewVisit, setShowNewVisit]       = useState(false);
   const [selectedVisit, setSelectedVisit]     = useState(null);
   const [pendingVisitAnalysis, setPendingVisitAnalysis] = useState(null);
@@ -1397,6 +1409,28 @@ export default function Dashboard() {
     }
   };
 
+  const sendChat = async (message) => {
+    setChatMessages(m => [...m, {role:"doc", text:message, time:now()}]);
+    if (!activePatient?.dbId) {
+      setChatMessages(m => [...m, {role:"ai", text:"Lütfen önce gerçek bir hasta seçin.", time:now()}]);
+      return;
+    }
+    setChatLoading(true);
+    try {
+      const res = await fetch(`${API}/chat`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({patient_id: activePatient.dbId, message}),
+      });
+      const data = await res.json();
+      setChatMessages(m => [...m, {role:"ai", text: data.reply || "Yanıt alınamadı.", time:now()}]);
+    } catch {
+      setChatMessages(m => [...m, {role:"ai", text:"PUQ.ai bağlantısı kurulamadı.", time:now()}]);
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
   const openModal = () => { setShowModal(true); setActiveTab("Reçeteler"); };
   const closeModal = () => setShowModal(false);
   const savePrescription = async (rx) => {
@@ -1453,7 +1487,7 @@ export default function Dashboard() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Header patient={activePatient} activeTab={activeTab} setActiveTab={setActiveTab} latestAnalysis={latestAnalysis}/>
         <main className="flex-1 overflow-hidden flex flex-col min-h-0">
-          {activeTab==="Özet"       && <SummaryTab chatMessages={chatMessages} setMessages={setChatMessages} analyzing={analyzing} latestAnalysis={latestAnalysis} visits={visits} onVisitClick={setSelectedVisit} onNewVisit={()=>setShowNewVisit(true)} hasPatient={!!activePatient?.dbId}/>}
+          {activeTab==="Özet"       && <SummaryTab chatMessages={chatMessages} setMessages={setChatMessages} analyzing={analyzing} chatLoading={chatLoading} onSend={sendChat} latestAnalysis={latestAnalysis} visits={visits} onVisitClick={setSelectedVisit} onNewVisit={()=>setShowNewVisit(true)} hasPatient={!!activePatient?.dbId}/>}
           {activeTab==="Görüntüler" && <ImagesTab/>}
           {activeTab==="Lab"        && <LabTab/>}
           {activeTab==="Reçeteler"  && <PrescriptionsTab prescriptions={prescriptions} openModal={openModal}/>}
