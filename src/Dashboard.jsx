@@ -252,7 +252,7 @@ function AddPatientModal({onClose, onSave}) {
 }
 
 /* ── PatientSidebar ─────────────────────────────────────── */
-function PatientSidebar({patients, active, setActive, onAddPatient, onDeletePatient}) {
+function PatientSidebar({patients, active, setActive, onAddPatient, onDeletePatient, sidebarView, setSidebarView}) {
   const [search, setSearch] = useState("");
   const dot=s=>s==="critical"?"bg-rose-500":s==="monitor"?"bg-amber-400":"bg-emerald-400";
   const filtered = patients.filter(p =>
@@ -281,9 +281,13 @@ function PatientSidebar({patients, active, setActive, onAddPatient, onDeletePati
         </div>
       </div>
       <nav className="px-2 py-3 space-y-0.5" style={{borderBottom:`1px solid ${C.border}`}}>
-        {[{icon:Users,label:"Hastalar",badge:String(patients.length),a:true},{icon:Calendar,label:"Randevular",badge:"7"},
-          {icon:Archive,label:"Arşiv"},{icon:Settings,label:"Ayarlar"}].map(({icon:Icon,label,badge,a})=>(
-          <button key={label}
+        {[{icon:Users,label:"Hastalar",view:"hastalar",badge:String(patients.length)},
+          {icon:Calendar,label:"Randevular",view:"randevular",badge:"0"},
+          {icon:Archive,label:"Arşiv",view:"arsiv"},
+          {icon:Settings,label:"Ayarlar",view:"ayarlar"}].map(({icon:Icon,label,view,badge})=>{
+          const a = sidebarView === view;
+          return (
+          <button key={label} onClick={()=>setSidebarView(view)}
                   className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] transition-colors"
                   style={a?{background:`linear-gradient(90deg,${C.primary}25,${C.primary}08)`,borderLeft:`2px solid ${C.primary}`,color:"white"}:{color:C.textMid}}
                   onMouseEnter={e=>!a&&(e.currentTarget.style.background=C.surfaceAlt)}
@@ -293,7 +297,7 @@ function PatientSidebar({patients, active, setActive, onAddPatient, onDeletePati
             {badge&&<span className="text-[10px] px-1.5 py-0.5 rounded tabular-nums"
                           style={{background:a?`${C.primary}33`:C.surfaceAlt,color:a?C.primary:C.textMid}}>{badge}</span>}
           </button>
-        ))}
+        )})}
       </nav>
       <div className="p-3" style={{borderBottom:`1px solid ${C.border}`}}>
         <div className="relative">
@@ -578,49 +582,97 @@ function VitalTile({icon:Icon,label,value,unit,tone,spark,first}) {
   );
 }
 
-function VitalsPanel() {
+function VitalsPanel({vitals, lesionMeasurements, onAddVitals}) {
+  const hasVitals = vitals && vitals.length > 0;
+  const hasLesion = lesionMeasurements && lesionMeasurements.length > 0;
+
+  const latest = hasVitals ? vitals[vitals.length - 1] : null;
+  const hrSpark  = hasVitals ? vitals.map((v,i)=>({x:i, y:v.heart_rate    || 0})) : [];
+  const tmpSpark = hasVitals ? vitals.map((v,i)=>({x:i, y:v.temperature   || 0})) : [];
+  const o2Spark  = hasVitals ? vitals.map((v,i)=>({x:i, y:v.o2_saturation || 0})) : [];
+
+  const lesionChart = hasLesion ? lesionMeasurements.map(m=>({
+    m: new Date(m.measured_at).toLocaleDateString("tr-TR",{month:"short",day:"numeric"}),
+    size: parseFloat(m.size_mm),
+  })) : [];
+
+  const lesionFirst = hasLesion ? parseFloat(lesionMeasurements[0].size_mm) : 0;
+  const lesionLast  = hasLesion ? parseFloat(lesionMeasurements[lesionMeasurements.length-1].size_mm) : 0;
+  const lesionDiff  = (lesionLast - lesionFirst).toFixed(1);
+
+  const addBtn = (
+    <button onClick={onAddVitals}
+            className="flex items-center gap-1 text-[11px] px-2 py-1 rounded"
+            style={{background:`${C.primary}15`,border:`1px solid ${C.primary}40`,color:"#c4b5fd"}}>
+      <Plus size={11}/>Ölçüm Ekle
+    </button>
+  );
+
+  if (!hasVitals && !hasLesion) {
+    return (
+      <PanelShell icon={Activity} title="Vital Bulgular & Büyüme" right={addBtn}>
+        <div className="flex-1 flex flex-col items-center justify-center gap-3 p-4" style={{color:C.textLo}}>
+          <Activity size={28} style={{color:C.textLo}}/>
+          <div className="text-center">
+            <div className="text-[13px] font-medium text-zinc-400 mb-1">Ölçüm kaydı yok</div>
+            <div className="text-[11px]">Bu hasta için henüz vital veya lezyon ölçümü girilmedi.</div>
+          </div>
+          <button onClick={onAddVitals}
+                  className="px-4 py-2 rounded-lg text-[12px] font-medium text-white"
+                  style={{background:`linear-gradient(135deg,${C.primary},${C.primaryDim})`}}>
+            İlk Ölçümü Ekle
+          </button>
+        </div>
+      </PanelShell>
+    );
+  }
+
   return (
-    <PanelShell icon={Activity} title="Vital Bulgular & Büyüme"
-                right={<span className="text-[10px] font-mono flex items-center gap-1" style={{color:C.emerald}}>
-                  <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{background:C.emerald}}/>canlı</span>}>
-      <div className="grid grid-cols-3" style={{borderBottom:`1px solid ${C.border}`}}>
-        <VitalTile icon={Heart}       label="Nabız" value="77"   unit="bpm" tone="rose"    spark={VITALS.map(v=>({x:v.t,y:v.hr}))}   first/>
-        <VitalTile icon={Thermometer} label="Ateş"  value="37.0" unit="°C"  tone="amber"   spark={VITALS.map(v=>({x:v.t,y:v.temp}))}/>
-        <VitalTile icon={TrendingUp}  label="O₂"    value="98"   unit="%"   tone="emerald" spark={VITALS.map(v=>({x:v.t,y:97+Math.random()}))}/>
-      </div>
-      <div className="p-4">
-        <div className="flex items-baseline justify-between mb-2">
-          <div>
-            <div className="text-[10.5px] uppercase tracking-wider" style={{color:C.textLo}}>Lezyon büyümesi (mm)</div>
-            <div className="flex items-baseline gap-2 mt-0.5">
-              <span className="text-[20px] font-semibold text-zinc-100 tabular-nums">6.9</span>
-              <span className="text-[11px]" style={{color:C.rose}}>↑ 3.7mm / 9 ay</span>
+    <PanelShell icon={Activity} title="Vital Bulgular & Büyüme" right={addBtn}>
+      {hasVitals && (
+        <div className="grid grid-cols-3" style={{borderBottom:`1px solid ${C.border}`}}>
+          <VitalTile icon={Heart}       label="Nabız" value={String(latest.heart_rate    ?? "—")} unit="bpm" tone="rose"    spark={hrSpark}  first/>
+          <VitalTile icon={Thermometer} label="Ateş"  value={String(latest.temperature   ?? "—")} unit="°C"  tone="amber"   spark={tmpSpark}/>
+          <VitalTile icon={TrendingUp}  label="O₂"    value={String(latest.o2_saturation ?? "—")} unit="%"   tone="emerald" spark={o2Spark}/>
+        </div>
+      )}
+      {hasLesion ? (
+        <div className="p-4">
+          <div className="flex items-baseline justify-between mb-2">
+            <div>
+              <div className="text-[10.5px] uppercase tracking-wider" style={{color:C.textLo}}>Lezyon büyümesi (mm)</div>
+              <div className="flex items-baseline gap-2 mt-0.5">
+                <span className="text-[20px] font-semibold text-zinc-100 tabular-nums">{lesionLast}</span>
+                {lesionDiff > 0
+                  ? <span className="text-[11px]" style={{color:C.rose}}>↑ {lesionDiff}mm</span>
+                  : lesionDiff < 0
+                    ? <span className="text-[11px]" style={{color:C.emerald}}>↓ {Math.abs(lesionDiff)}mm</span>
+                    : <span className="text-[11px]" style={{color:C.textLo}}>→ değişim yok</span>}
+              </div>
             </div>
           </div>
-          <div className="flex gap-1">
-            {["3A","6A","1Y","Tümü"].map((p,i)=>(
-              <button key={p} className="px-2 py-0.5 text-[10.5px] rounded"
-                      style={i===1?{background:C.primary,color:"white"}:{border:`1px solid ${C.border}`,color:C.textMid}}>{p}</button>
-            ))}
-          </div>
+          <ResponsiveContainer width="100%" height={hasVitals ? 90 : 140}>
+            <AreaChart data={lesionChart} margin={{top:4,right:4,left:-28,bottom:0}}>
+              <defs>
+                <linearGradient id="growthGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={C.primary} stopOpacity={0.5}/>
+                  <stop offset="100%" stopColor={C.primary} stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="2 4" stroke={C.border} vertical={false}/>
+              <XAxis dataKey="m" tick={{fill:C.textLo,fontSize:10}} axisLine={false} tickLine={false}/>
+              <YAxis tick={{fill:C.textLo,fontSize:10}} axisLine={false} tickLine={false}/>
+              <Tooltip contentStyle={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,fontSize:11,color:C.textHi}}/>
+              <Area type="monotone" dataKey="size" stroke={C.primary} strokeWidth={2} fill="url(#growthGrad)"
+                    dot={{r:3,fill:C.primary,strokeWidth:0}} activeDot={{r:4,fill:C.primary,stroke:C.bg,strokeWidth:2}}/>
+            </AreaChart>
+          </ResponsiveContainer>
         </div>
-        <ResponsiveContainer width="100%" height={120}>
-          <AreaChart data={LESION_GROWTH} margin={{top:4,right:4,left:-28,bottom:0}}>
-            <defs>
-              <linearGradient id="growthGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={C.primary} stopOpacity={0.5}/>
-                <stop offset="100%" stopColor={C.primary} stopOpacity={0}/>
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="2 4" stroke={C.border} vertical={false}/>
-            <XAxis dataKey="m" tick={{fill:C.textLo,fontSize:10}} axisLine={false} tickLine={false}/>
-            <YAxis tick={{fill:C.textLo,fontSize:10}} axisLine={false} tickLine={false}/>
-            <Tooltip contentStyle={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,fontSize:11,color:C.textHi}}/>
-            <Area type="monotone" dataKey="size" stroke={C.primary} strokeWidth={2} fill="url(#growthGrad)"
-                  dot={{r:2,fill:C.primary,strokeWidth:0}} activeDot={{r:4,fill:C.primary,stroke:C.bg,strokeWidth:2}}/>
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
+      ) : (
+        <div className="flex items-center justify-center p-4 text-[11px]" style={{color:C.textLo}}>
+          Lezyon ölçümü henüz girilmedi.
+        </div>
+      )}
     </PanelShell>
   );
 }
@@ -648,6 +700,12 @@ function ChatPanel({messages, setMessages, analyzing, onSend, chatLoading}) {
         ))}
       </div>
       <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+        {messages.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-full gap-2" style={{color:C.textLo}}>
+            <Sparkles size={24} style={{color:C.primary,opacity:0.5}}/>
+            <div className="text-[12px] text-center">Hasta seçildi. Soru sormaya başlayabilirsiniz.</div>
+          </div>
+        )}
         {messages.map((m,i)=>(
           <div key={i} className={`flex gap-2 ${m.role==="doc"?"flex-row-reverse":""}`}>
             <div className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center text-[10px]"
@@ -716,14 +774,489 @@ function ChatPanel({messages, setMessages, analyzing, onSend, chatLoading}) {
   );
 }
 
+/* ── VitalsModal ─────────────────────────────────────────── */
+function VitalsModal({patient, visits, onClose, onSaved}) {
+  const [hr,  setHr]  = useState("");
+  const [temp,setTemp]= useState("");
+  const [o2,  setO2]  = useState("");
+  const [szMm,setSzMm]= useState("");
+  const [region,setRegion]= useState("");
+  const [visitId, setVisitId] = useState(visits[0]?.id || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError]   = useState("");
+
+  const inp = "w-full rounded-lg px-3 py-2 text-[13px] text-zinc-100 placeholder:text-zinc-600 focus:outline-none";
+  const focus = e => (e.target.style.borderColor = C.primary+"66");
+  const blur  = e => (e.target.style.borderColor = C.border);
+
+  const handleSave = async () => {
+    if (!hr && !temp && !o2 && !szMm) { setError("En az bir değer giriniz."); return; }
+    setSaving(true); setError("");
+    try {
+      const base = { patient_id: patient.dbId, visit_id: visitId || undefined };
+      if (hr || temp || o2) {
+        await fetch(`${API}/vitals`, {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({
+            ...base,
+            ...(hr   ? {heart_rate:    parseInt(hr)}    : {}),
+            ...(temp  ? {temperature:   parseFloat(temp)}: {}),
+            ...(o2    ? {o2_saturation: parseInt(o2)}    : {}),
+          }),
+        });
+      }
+      if (szMm) {
+        await fetch(`${API}/lesion-measurements`, {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ ...base, size_mm: parseFloat(szMm), region: region || undefined }),
+        });
+      }
+      onSaved();
+    } catch(e) { setError(String(e.message)); }
+    finally    { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center"
+         style={{background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)"}}>
+      <div className="w-[480px] rounded-2xl flex flex-col" style={{background:C.surface,border:`1px solid ${C.border}`}}>
+        <div className="px-5 py-4 flex items-center justify-between" style={{borderBottom:`1px solid ${C.border}`}}>
+          <div className="flex items-center gap-2.5">
+            <div className="h-7 w-7 rounded-lg flex items-center justify-center"
+                 style={{background:`${C.primary}1a`,border:`1px solid ${C.primary}40`}}>
+              <Activity size={14} style={{color:C.primary}}/>
+            </div>
+            <div>
+              <div className="text-[15px] font-semibold text-zinc-100">Ölçüm Ekle</div>
+              <div className="text-[11px]" style={{color:C.textLo}}>{patient.name}</div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{color:C.textMid}}><X size={16}/></button>
+        </div>
+        <div className="px-5 py-4 space-y-4">
+          {visits.length > 0 && (
+            <div>
+              <label className="text-[11px] uppercase tracking-wider block mb-1.5" style={{color:C.textLo}}>Muayene</label>
+              <select value={visitId} onChange={e=>setVisitId(e.target.value)}
+                      className={inp} style={{background:C.bg,border:`1px solid ${C.border}`}}>
+                {visits.map(v=>(
+                  <option key={v.id} value={v.id}>
+                    {new Date(v.visit_date).toLocaleDateString("tr-TR")} — {v.complaint || "Muayene"}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div>
+            <label className="text-[11px] uppercase tracking-wider block mb-1.5" style={{color:C.textLo}}>Vital Bulgular</label>
+            <div className="grid grid-cols-3 gap-2">
+              {[["Nabız (bpm)", hr, setHr, "72"],["Ateş (°C)", temp, setTemp, "36.6"],["O₂ (%)", o2, setO2, "98"]].map(([lbl,val,set,ph])=>(
+                <div key={lbl}>
+                  <div className="text-[10px] mb-1" style={{color:C.textLo}}>{lbl}</div>
+                  <input value={val} onChange={e=>set(e.target.value)} placeholder={ph} type="number"
+                         className={inp} style={{background:C.bg,border:`1px solid ${C.border}`}}
+                         onFocus={focus} onBlur={blur}/>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="text-[11px] uppercase tracking-wider block mb-1.5" style={{color:C.textLo}}>Lezyon Ölçümü</label>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <div className="text-[10px] mb-1" style={{color:C.textLo}}>Boyut (mm)</div>
+                <input value={szMm} onChange={e=>setSzMm(e.target.value)} placeholder="6.5" type="number"
+                       className={inp} style={{background:C.bg,border:`1px solid ${C.border}`}}
+                       onFocus={focus} onBlur={blur}/>
+              </div>
+              <div>
+                <div className="text-[10px] mb-1" style={{color:C.textLo}}>Bölge</div>
+                <input value={region} onChange={e=>setRegion(e.target.value)} placeholder="Sol omuz"
+                       className={inp} style={{background:C.bg,border:`1px solid ${C.border}`}}
+                       onFocus={focus} onBlur={blur}/>
+              </div>
+            </div>
+          </div>
+          {error && <div className="text-[12px] px-3 py-2 rounded-lg" style={{background:`${C.rose}15`,color:"#fda4af",border:`1px solid ${C.rose}30`}}>{error}</div>}
+        </div>
+        <div className="px-5 py-3 flex justify-end gap-2" style={{borderTop:`1px solid ${C.border}`}}>
+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-[13px]"
+                  style={{border:`1px solid ${C.border}`,color:C.textMid}}>İptal</button>
+          <button onClick={handleSave} disabled={saving}
+                  className="px-5 py-2 rounded-lg text-[13px] font-medium text-white flex items-center gap-1.5 disabled:opacity-50"
+                  style={{background:`linear-gradient(135deg,${C.primary},${C.primaryDim})`,boxShadow:`0 4px 12px -4px ${C.primary}80`}}>
+            {saving ? <Loader2 size={14} className="animate-spin"/> : <Check size={14}/>}
+            {saving ? "Kaydediliyor…" : "Kaydet"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── NewAppointmentModal ─────────────────────────────────── */
+function NewAppointmentModal({patients, onClose, onSaved}) {
+  const [patientId, setPatientId] = useState(patients.filter(p=>p.dbId)[0]?.dbId || "");
+  const [apptDate,  setApptDate]  = useState("");
+  const [type,      setType]      = useState("Kontrol");
+  const [notes,     setNotes]     = useState("");
+  const [saving,    setSaving]    = useState(false);
+  const [error,     setError]     = useState("");
+  const TYPES = ["Kontrol","Dermoskopi","Biyopsi","Eksizyonel","Akne Tedavisi","Saç Analizi","Diğer"];
+  const inp   = "w-full rounded-lg px-3 py-2 text-[13px] text-zinc-100 placeholder:text-zinc-600 focus:outline-none";
+  const focus = e => (e.target.style.borderColor = C.accent+"66");
+  const blur  = e => (e.target.style.borderColor = C.border);
+
+  const handleSave = async () => {
+    if (!patientId || !apptDate) { setError("Hasta ve tarih zorunludur."); return; }
+    setSaving(true); setError("");
+    try {
+      const res = await fetch(`${API}/appointments`, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ patient_id:patientId, appointment_date:apptDate, type, notes:notes||undefined }),
+      });
+      if (!res.ok) throw new Error("Kayıt başarısız");
+      onSaved();
+    } catch(e) { setError(e.message); }
+    finally    { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center"
+         style={{background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)"}}>
+      <div className="w-[480px] rounded-2xl flex flex-col" style={{background:C.surface,border:`1px solid ${C.border}`}}>
+        <div className="px-5 py-4 flex items-center justify-between" style={{borderBottom:`1px solid ${C.border}`}}>
+          <div className="flex items-center gap-2.5">
+            <div className="h-7 w-7 rounded-lg flex items-center justify-center"
+                 style={{background:`${C.accent}1a`,border:`1px solid ${C.accent}40`}}>
+              <Calendar size={14} style={{color:C.accent}}/>
+            </div>
+            <span className="text-[15px] font-semibold text-zinc-100">Yeni Randevu</span>
+          </div>
+          <button onClick={onClose} style={{color:C.textMid}}><X size={16}/></button>
+        </div>
+        <div className="px-5 py-4 space-y-4">
+          <div>
+            <label className="text-[11px] uppercase tracking-wider block mb-1.5" style={{color:C.textLo}}>Hasta *</label>
+            <select value={patientId} onChange={e=>setPatientId(e.target.value)}
+                    className={inp} style={{background:C.bg,border:`1px solid ${C.border}`}}
+                    onFocus={focus} onBlur={blur}>
+              {patients.filter(p=>p.dbId).map(p=>(
+                <option key={p.dbId} value={p.dbId}>{p.name}</option>
+              ))}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[11px] uppercase tracking-wider block mb-1.5" style={{color:C.textLo}}>Tarih & Saat *</label>
+              <input type="datetime-local" value={apptDate} onChange={e=>setApptDate(e.target.value)}
+                     className={inp} style={{background:C.bg,border:`1px solid ${C.border}`,colorScheme:"dark"}}
+                     onFocus={focus} onBlur={blur}/>
+            </div>
+            <div>
+              <label className="text-[11px] uppercase tracking-wider block mb-1.5" style={{color:C.textLo}}>Randevu Türü</label>
+              <select value={type} onChange={e=>setType(e.target.value)}
+                      className={inp} style={{background:C.bg,border:`1px solid ${C.border}`}}
+                      onFocus={focus} onBlur={blur}>
+                {TYPES.map(t=><option key={t}>{t}</option>)}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label className="text-[11px] uppercase tracking-wider block mb-1.5" style={{color:C.textLo}}>Not</label>
+            <textarea value={notes} onChange={e=>setNotes(e.target.value)} rows={3}
+                      placeholder="Randevu hakkında not…"
+                      className={`${inp} resize-none`} style={{background:C.bg,border:`1px solid ${C.border}`}}
+                      onFocus={focus} onBlur={blur}/>
+          </div>
+          {error && <div className="text-[12px] px-3 py-2 rounded-lg" style={{background:`${C.rose}15`,color:"#fda4af",border:`1px solid ${C.rose}30`}}>{error}</div>}
+        </div>
+        <div className="px-5 py-3 flex justify-end gap-2" style={{borderTop:`1px solid ${C.border}`}}>
+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-[13px]"
+                  style={{border:`1px solid ${C.border}`,color:C.textMid}}>İptal</button>
+          <button onClick={handleSave} disabled={saving}
+                  className="px-5 py-2 rounded-lg text-[13px] font-medium text-white flex items-center gap-1.5 disabled:opacity-50"
+                  style={{background:`linear-gradient(135deg,${C.accent},${C.accentDim})`,boxShadow:`0 4px 12px -4px ${C.accent}80`}}>
+            {saving ? <Loader2 size={14} className="animate-spin"/> : <Check size={14}/>}
+            {saving ? "Kaydediliyor…" : "Randevuyu Kaydet"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── RandevularPage ──────────────────────────────────────── */
+function RandevularPage({patients, onNavigateToPatient}) {
+  const [appointments, setAppointments] = useState([]);
+  const [loading,  setLoading]   = useState(true);
+  const [showModal,setShowModal] = useState(false);
+
+  const load = () =>
+    fetch(`${API}/appointments`).then(r=>r.json())
+      .then(d=>{ setAppointments(Array.isArray(d)?d:[]); setLoading(false); })
+      .catch(()=>setLoading(false));
+
+  useEffect(()=>{ load(); },[]);
+
+  const statusLabel = s => s==="scheduled"?"Planlandı":s==="completed"?"Tamamlandı":"İptal";
+  const statusStyle = s => s==="scheduled"
+    ?{background:`${C.accent}15`,  color:"#67e8f9", border:`1px solid ${C.accent}30`}
+    :s==="completed"
+    ?{background:`${C.emerald}15`, color:"#6ee7b7", border:`1px solid ${C.emerald}30`}
+    :{background:`${C.rose}15`,    color:"#fda4af", border:`1px solid ${C.rose}30`};
+
+  const updateStatus = async (id, status) => {
+    await fetch(`${API}/appointments/${id}`, {
+      method:"PATCH", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({status}),
+    });
+    load();
+  };
+
+  const today        = new Date().toDateString();
+  const todayCount   = appointments.filter(a=>new Date(a.appointment_date).toDateString()===today && a.status==="scheduled").length;
+  const pendingCount = appointments.filter(a=>a.status==="scheduled").length;
+  const doneCount    = appointments.filter(a=>a.status==="completed").length;
+
+  const grouped = appointments.reduce((acc,a)=>{
+    const d = new Date(a.appointment_date).toLocaleDateString("tr-TR",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
+    if (!acc[d]) acc[d]=[];
+    acc[d].push(a);
+    return acc;
+  },{});
+
+  return (
+    <>
+      <div className="h-14 shrink-0 flex items-center px-5 gap-4" style={{background:C.surface,borderBottom:`1px solid ${C.border}`}}>
+        <div className="flex items-center gap-2">
+          <div className="h-6 w-6 rounded-md flex items-center justify-center"
+               style={{background:`${C.accent}1a`,border:`1px solid ${C.accent}40`}}>
+            <Calendar size={13} style={{color:C.accent}}/>
+          </div>
+          <span className="text-[14px] font-semibold text-zinc-100">Randevular</span>
+        </div>
+        <div className="flex items-center gap-4 ml-2">
+          {[{label:"Bugün",value:todayCount,color:C.accent},{label:"Bekleyen",value:pendingCount,color:C.amber},{label:"Tamamlanan",value:doneCount,color:C.emerald}].map(s=>(
+            <div key={s.label} className="flex items-center gap-1.5 text-[12px]">
+              <span className="font-semibold tabular-nums" style={{color:s.color}}>{s.value}</span>
+              <span style={{color:C.textLo}}>{s.label}</span>
+            </div>
+          ))}
+        </div>
+        <div className="flex-1"/>
+        <button onClick={()=>setShowModal(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium text-white"
+                style={{background:`linear-gradient(135deg,${C.accent},${C.accentDim})`,boxShadow:`0 4px 12px -4px ${C.accent}60`}}>
+          <Plus size={13}/>Yeni Randevu
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 space-y-5">
+        {loading ? (
+          <div className="flex items-center justify-center h-40"><Loader2 size={20} className="animate-spin" style={{color:C.textLo}}/></div>
+        ) : Object.keys(grouped).length===0 ? (
+          <div className="flex flex-col items-center justify-center h-64 gap-3" style={{color:C.textLo}}>
+            <Calendar size={36}/>
+            <div className="text-center">
+              <div className="text-[14px] font-medium text-zinc-400 mb-1">Randevu yok</div>
+              <div className="text-[12px]">Yeni randevu oluşturmak için "Yeni Randevu" butonuna tıklayın.</div>
+            </div>
+          </div>
+        ) : Object.entries(grouped).map(([dateLabel,appts])=>(
+          <div key={dateLabel}>
+            <div className="text-[11px] uppercase tracking-wider font-medium mb-2 px-1" style={{color:C.textLo}}>{dateLabel}</div>
+            <div className="space-y-2">
+              {appts.map(a=>{
+                const time     = new Date(a.appointment_date).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"});
+                const name     = a.patients?.full_name || "Bilinmiyor";
+                const initials = name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
+                return (
+                  <div key={a.id} className="flex items-center gap-4 px-4 py-3 rounded-xl"
+                       style={{background:C.surface,border:`1px solid ${C.border}`}}>
+                    <div className="text-[13px] font-mono font-semibold w-12 shrink-0 tabular-nums" style={{color:C.accent}}>{time}</div>
+                    <div className="h-8 w-8 shrink-0 rounded-lg flex items-center justify-center text-[11px] font-medium text-zinc-200"
+                         style={{background:C.surfaceAlt,border:`1px solid ${C.border}`}}>{initials}</div>
+                    <div className="flex-1 min-w-0">
+                      <button onClick={()=>onNavigateToPatient(a.patient_id)}
+                              className="text-[13px] font-medium text-zinc-100 hover:text-violet-300 transition-colors text-left">
+                        {name}
+                      </button>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <span className="text-[11px]" style={{color:C.textMid}}>{a.type}</span>
+                        {a.notes && <span className="text-[11px] truncate" style={{color:C.textLo}}>· {a.notes}</span>}
+                      </div>
+                    </div>
+                    <span className="text-[10.5px] px-2 py-0.5 rounded font-medium shrink-0" style={statusStyle(a.status)}>
+                      {statusLabel(a.status)}
+                    </span>
+                    {a.status==="scheduled" && (
+                      <div className="flex gap-1.5 shrink-0">
+                        <button onClick={()=>updateStatus(a.id,"completed")}
+                                className="px-2.5 py-1 rounded text-[11px]"
+                                style={{background:`${C.emerald}15`,color:"#6ee7b7",border:`1px solid ${C.emerald}30`}}>
+                          Tamamlandı
+                        </button>
+                        <button onClick={()=>updateStatus(a.id,"cancelled")}
+                                className="px-2.5 py-1 rounded text-[11px]"
+                                style={{background:`${C.rose}10`,color:"#fda4af",border:`1px solid ${C.rose}25`}}>
+                          İptal
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+      {showModal && (
+        <NewAppointmentModal patients={patients} onClose={()=>setShowModal(false)} onSaved={()=>{ setShowModal(false); load(); }}/>
+      )}
+    </>
+  );
+}
+
+/* ── ArsivPage ───────────────────────────────────────────── */
+function ArsivPage({onNavigateToPatient}) {
+  const [archive, setArchive] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search,  setSearch]  = useState("");
+
+  useEffect(()=>{
+    fetch(`${API}/archive`).then(r=>r.json())
+      .then(d=>{ setArchive(Array.isArray(d)?d:[]); setLoading(false); })
+      .catch(()=>setLoading(false));
+  },[]);
+
+  const filtered = archive.filter(a=>{
+    const q = search.toLowerCase();
+    return (a.patients?.full_name||"").toLowerCase().includes(q) || (a.disease_name||"").toLowerCase().includes(q);
+  });
+
+  const confColor = c => c>=0.8?C.rose:c>=0.6?C.amber:C.emerald;
+  const confLabel = c => c>=0.8?"Yüksek Risk":c>=0.6?"Takip":"Stabil";
+
+  return (
+    <>
+      <div className="h-14 shrink-0 flex items-center px-5 gap-4" style={{background:C.surface,borderBottom:`1px solid ${C.border}`}}>
+        <div className="flex items-center gap-2">
+          <div className="h-6 w-6 rounded-md flex items-center justify-center"
+               style={{background:`${C.amber}1a`,border:`1px solid ${C.amber}40`}}>
+            <Archive size={13} style={{color:C.amber}}/>
+          </div>
+          <span className="text-[14px] font-semibold text-zinc-100">Arşiv</span>
+          {!loading && <span className="text-[11px]" style={{color:C.textLo}}>{archive.length} analiz kaydı</span>}
+        </div>
+        <div className="flex-1"/>
+        <div className="relative">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{color:C.textLo}}/>
+          <input value={search} onChange={e=>setSearch(e.target.value)}
+                 placeholder="Hasta adı veya tanı ara…"
+                 className="pl-8 pr-4 py-1.5 rounded-lg text-[12px] text-zinc-200 placeholder:text-zinc-600 focus:outline-none w-60"
+                 style={{background:C.bg,border:`1px solid ${C.border}`}}
+                 onFocus={e=>(e.target.style.borderColor=C.amber+"66")}
+                 onBlur={e=>(e.target.style.borderColor=C.border)}/>
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto">
+        {loading ? (
+          <div className="flex items-center justify-center h-40"><Loader2 size={20} className="animate-spin" style={{color:C.textLo}}/></div>
+        ) : filtered.length===0 ? (
+          <div className="flex flex-col items-center justify-center h-64 gap-3" style={{color:C.textLo}}>
+            <Archive size={36}/>
+            <div className="text-[13px]">{search?"Arama sonucu bulunamadı.":"Arşiv boş."}</div>
+          </div>
+        ) : (
+          <table className="w-full text-[12px]">
+            <thead style={{background:C.surface,borderBottom:`1px solid ${C.border}`,position:"sticky",top:0,zIndex:1}}>
+              <tr style={{color:C.textLo}}>
+                {["Hasta","Tanı","Risk","Güven","Tarih",""].map((h,i)=>(
+                  <th key={i} className={`${i===0||i===5?"text-left":"text-center"} px-4 py-2.5 font-medium text-[10.5px] uppercase tracking-wider`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((a,i)=>{
+                const name     = a.patients?.full_name||"Bilinmiyor";
+                const initials = name.split(" ").map(w=>w[0]).join("").slice(0,2).toUpperCase();
+                const conf     = a.confidence||0;
+                const date     = new Date(a.analyzed_at).toLocaleDateString("tr-TR",{day:"2-digit",month:"short",year:"numeric"});
+                return (
+                  <tr key={a.id} style={{borderBottom:`1px solid ${C.borderSoft}`,background:i%2===0?"transparent":`${C.surfaceAlt}55`}}>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="h-7 w-7 shrink-0 rounded-md flex items-center justify-center text-[10px] font-medium text-zinc-200"
+                             style={{background:C.surfaceAlt,border:`1px solid ${C.border}`}}>{initials}</div>
+                        <button onClick={()=>onNavigateToPatient(a.patient_id)}
+                                className="text-[12.5px] font-medium text-zinc-100 hover:text-violet-300 transition-colors text-left">
+                          {name}
+                        </button>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-center text-zinc-200">{a.disease_name}</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className="text-[10.5px] px-2 py-0.5 rounded font-medium"
+                            style={{background:`${confColor(conf)}15`,color:confColor(conf),border:`1px solid ${confColor(conf)}30`}}>
+                        {confLabel(conf)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <div className="flex items-center gap-2 justify-center">
+                        <div className="h-1.5 w-16 rounded-full overflow-hidden" style={{background:C.surfaceAlt}}>
+                          <div className="h-full rounded-full" style={{width:`${Math.round(conf*100)}%`,background:confColor(conf)}}/>
+                        </div>
+                        <span className="tabular-nums" style={{color:C.textMid}}>%{Math.round(conf*100)}</span>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-center font-mono text-[11px]" style={{color:C.textLo}}>{date}</td>
+                    <td className="px-4 py-3">
+                      <button onClick={()=>onNavigateToPatient(a.patient_id)}
+                              className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded ml-auto"
+                              style={{background:`${C.primary}15`,color:"#c4b5fd",border:`1px solid ${C.primary}30`}}>
+                        Hastaya Git<ChevronRight size={11}/>
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </>
+  );
+}
+
+/* ── Placeholder sayfaları ───────────────────────────────── */
+function ComingSoonPage({icon:Icon, title, description, color}) {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center gap-4" style={{color:C.textLo}}>
+      <div className="h-16 w-16 rounded-2xl flex items-center justify-center"
+           style={{background:`${color}15`,border:`1px solid ${color}30`}}>
+        <Icon size={28} style={{color}}/>
+      </div>
+      <div className="text-center">
+        <div className="text-[16px] font-semibold text-zinc-300 mb-1">{title}</div>
+        <div className="text-[13px]" style={{color:C.textLo}}>{description}</div>
+      </div>
+      <div className="px-4 py-2 rounded-lg text-[12px]"
+           style={{background:C.surface,border:`1px solid ${C.border}`,color:C.textMid}}>
+        Yakında eklenecek
+      </div>
+    </div>
+  );
+}
+
 /* ── Tabs ────────────────────────────────────────────────── */
-function SummaryTab({chatMessages, setMessages, analyzing, chatLoading, onSend, latestAnalysis, visits, onVisitClick, onNewVisit, hasPatient}) {
+function SummaryTab({chatMessages, setMessages, analyzing, chatLoading, onSend, latestAnalysis, visits, onVisitClick, onNewVisit, hasPatient, vitals, lesionMeasurements, onAddVitals}) {
   return (
     <div className="flex-1 grid grid-cols-12 gap-3 p-3 overflow-hidden">
       <div className="col-span-12 lg:col-span-8 flex flex-col gap-3 overflow-y-auto min-h-0 pr-1">
         <NovaVisionViewer latestAnalysis={latestAnalysis}/>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 min-h-[280px]">
-          <MedicalHistory visits={visits} onVisitClick={onVisitClick} onNewVisit={onNewVisit} hasPatient={hasPatient}/><VitalsPanel/>
+          <MedicalHistory visits={visits} onVisitClick={onVisitClick} onNewVisit={onNewVisit} hasPatient={hasPatient}/>
+          <VitalsPanel vitals={vitals} lesionMeasurements={lesionMeasurements} onAddVitals={onAddVitals}/>
         </div>
       </div>
       <div className="col-span-12 lg:col-span-4 min-h-0 flex flex-col">
@@ -733,36 +1266,54 @@ function SummaryTab({chatMessages, setMessages, analyzing, chatLoading, onSend, 
   );
 }
 
-function ImagesTab() {
-  const [selected,setSelected]=useState(IMAGES[0]);
-  const fc=f=>f==="critical"?C.rose:f==="monitor"?C.amber:C.emerald;
-  const fl=f=>f==="critical"?"Kritik":f==="monitor"?"Takip":"Stabil";
+function ImagesTab({analyses}) {
+  const [selected,setSelected]=useState(null);
+  const list = analyses || [];
+
+  useEffect(() => { setSelected(list[0] || null); }, [list.length]);
+
+  if (list.length === 0) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-4" style={{color:C.textLo}}>
+        <div className="h-16 w-16 rounded-2xl flex items-center justify-center"
+             style={{background:`${C.accent}15`,border:`1px solid ${C.accent}30`}}>
+          <ImageIcon size={28} style={{color:C.accent}}/>
+        </div>
+        <div className="text-center">
+          <div className="text-[16px] font-semibold text-zinc-300 mb-1">Görüntü bulunamadı</div>
+          <div className="text-[13px]">Bu hasta için henüz analiz görüntüsü kaydedilmedi.</div>
+          <div className="text-[12px] mt-1" style={{color:C.textLo}}>Özet sekmesinden muayene başlatarak analiz ekleyebilirsiniz.</div>
+        </div>
+      </div>
+    );
+  }
+
+  const sel = selected || list[0];
+  const confPct = Math.round((sel.confidence || 0) * 100);
+  const date = new Date(sel.analyzed_at).toLocaleString("tr-TR",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
+
   return (
     <div className="flex-1 p-3 overflow-hidden grid grid-cols-12 gap-3">
       <div className="col-span-12 lg:col-span-4 min-h-0">
-        <PanelShell icon={ImageIcon} title="Görüntü Arşivi" subtitle={`${IMAGES.length} kayıt`}
-                    right={<button className="text-[11px] px-2 py-1 rounded"
-                                   style={{background:`linear-gradient(135deg,${C.primary},${C.primaryDim})`,color:"white"}}>+ Yeni</button>}>
+        <PanelShell icon={ImageIcon} title="Görüntü Arşivi" subtitle={`${list.length} kayıt`}>
           <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-            {IMAGES.map(img=>{
-              const sel=img.id===selected.id;
+            {list.map(img=>{
+              const isSel = img.id === sel?.id;
+              const d = new Date(img.analyzed_at).toLocaleDateString("tr-TR");
               return (
                 <button key={img.id} onClick={()=>setSelected(img)}
                         className="w-full text-left rounded-lg p-2.5 flex items-center gap-3"
-                        style={sel?{background:`linear-gradient(90deg,${C.primary}20,${C.primary}05)`,border:`1px solid ${C.primary}55`}:{background:C.bg,border:`1px solid ${C.border}`}}>
-                  <div className="h-14 w-14 shrink-0 rounded-md relative"
-                       style={{background:"radial-gradient(ellipse at 35% 50%,#c89378 0%,#6e4634 70%,#2a1814 100%)"}}>
-                    <div className="absolute" style={{left:"30%",top:"30%",width:"40%",height:"40%",
-                         background:"radial-gradient(ellipse at center,#1a0e08 0%,transparent 70%)",borderRadius:"50%"}}/>
+                        style={isSel?{background:`linear-gradient(90deg,${C.primary}20,${C.primary}05)`,border:`1px solid ${C.primary}55`}:{background:C.bg,border:`1px solid ${C.border}`}}>
+                  <div className="h-14 w-14 shrink-0 rounded-md overflow-hidden flex items-center justify-center"
+                       style={{background:C.surfaceAlt,border:`1px solid ${C.border}`}}>
+                    {img.image_url && img.image_url !== "https://example.com/dermoscopy.jpg"
+                      ? <img src={img.image_url} alt="" className="h-full w-full object-cover"/>
+                      : <ImageIcon size={20} style={{color:C.textLo}}/>}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[11.5px] font-medium text-zinc-100 truncate">{img.region}</span>
-                      <span className="text-[9.5px] px-1.5 py-0.5 rounded font-medium"
-                            style={{background:`${fc(img.flag)}1a`,color:fc(img.flag),border:`1px solid ${fc(img.flag)}40`}}>{fl(img.flag)}</span>
-                    </div>
-                    <div className="text-[10px] mt-0.5" style={{color:C.textLo}}>{img.type}</div>
-                    <div className="text-[9.5px] font-mono mt-0.5" style={{color:C.textLo}}>{img.date} · {img.id}</div>
+                    <div className="text-[11.5px] font-medium text-zinc-100 truncate">{img.disease_name}</div>
+                    <div className="text-[10px] mt-0.5" style={{color:C.textLo}}>Güven: %{Math.round((img.confidence||0)*100)}</div>
+                    <div className="text-[9.5px] font-mono mt-0.5" style={{color:C.textLo}}>{d} · {img.id.slice(0,8)}</div>
                   </div>
                   <ChevronRight size={12} style={{color:C.textLo}}/>
                 </button>
@@ -772,7 +1323,7 @@ function ImagesTab() {
         </PanelShell>
       </div>
       <div className="col-span-12 lg:col-span-8 min-h-0 flex flex-col">
-        <PanelShell icon={Eye} title={selected.region} subtitle={`${selected.type} · ${selected.id}`} tone="accent"
+        <PanelShell icon={Eye} title={sel.disease_name} subtitle={`Analiz · ${sel.id.slice(0,8)}`} tone="accent"
                     right={
                       <div className="flex gap-1.5">
                         <button className="flex items-center gap-1.5 px-2 py-1 rounded text-[11px]"
@@ -781,19 +1332,23 @@ function ImagesTab() {
                                 style={{border:`1px solid ${C.border}`,color:C.textMid}}><Printer size={11}/>Yazdır</button>
                       </div>
                     }>
-          <div className="relative aspect-[16/9]"
+          <div className="relative aspect-[16/9] flex items-center justify-center overflow-hidden"
                style={{background:"linear-gradient(135deg,#0e0e18 0%,#1a1a2e 50%,#0a0a14 100%)"}}>
-            <div className="absolute inset-0 opacity-90"
-                 style={{background:"radial-gradient(ellipse 70% 60% at 35% 50%,#c89378 0%,#a87158 35%,#6e4634 70%,#2a1814 100%)"}}/>
-            <div className="absolute" style={{left:"40%",top:"35%",width:"20%",height:"30%",
-                 background:"radial-gradient(ellipse at center,#1a0e08 0%,transparent 70%)",borderRadius:"50%"}}/>
+            {sel.image_url && sel.image_url !== "https://example.com/dermoscopy.jpg"
+              ? <img src={sel.image_url} alt={sel.disease_name} className="w-full h-full object-contain"/>
+              : <>
+                  <div className="absolute inset-0 opacity-90"
+                       style={{background:"radial-gradient(ellipse 70% 60% at 35% 50%,#c89378 0%,#a87158 35%,#6e4634 70%,#2a1814 100%)"}}/>
+                  <div className="absolute" style={{left:"40%",top:"35%",width:"20%",height:"30%",
+                       background:"radial-gradient(ellipse at center,#1a0e08 0%,transparent 70%)",borderRadius:"50%"}}/>
+                </>}
             <div className="absolute top-3 left-1/2 -translate-x-1/2 text-[10.5px] font-mono px-2.5 py-1 rounded"
                  style={{background:`${C.bg}cc`,border:`1px solid ${C.border}`,color:C.textMid}}>
-              {selected.date} · conf {selected.conf}
+              {date} · güven %{confPct}
             </div>
           </div>
           <div className="grid grid-cols-4" style={{borderTop:`1px solid ${C.border}`}}>
-            {[{label:"Boyut",v:selected.size},{label:"Güven",v:selected.conf},{label:"Bölge",v:selected.region},{label:"Tip",v:selected.type}]
+            {[{label:"Tanı",v:sel.disease_name},{label:"Güven",v:`%${confPct}`},{label:"Tarih",v:date.slice(0,10)},{label:"ID",v:sel.id.slice(0,8)}]
               .map((m,i)=>(
               <div key={m.label} className="px-4 py-2.5" style={{borderLeft:i>0?`1px solid ${C.border}`:"none"}}>
                 <div className="text-[10px] uppercase tracking-wider" style={{color:C.textLo}}>{m.label}</div>
@@ -823,60 +1378,229 @@ function SummaryCard({label,value,total,color,icon:Icon}) {
   );
 }
 
-function LabTab() {
+function LabTab({labResults, onAddLab}) {
   const fc=f=>f==="high"?C.rose:f==="low"?C.amber:C.emerald;
   const fb=f=>f==="high"?`${C.rose}15`:f==="low"?`${C.amber}15`:`${C.emerald}10`;
   const fl=f=>f==="high"?"↑ YÜKSEK":f==="low"?"↓ DÜŞÜK":"✓ NORMAL";
-  const hi=LAB_RESULTS.filter(l=>l.flag==="high").length;
-  const lo=LAB_RESULTS.filter(l=>l.flag==="low").length;
-  const ok=LAB_RESULTS.filter(l=>l.flag==="normal").length;
+  const hi=(labResults||[]).filter(l=>l.flag==="high").length;
+  const lo=(labResults||[]).filter(l=>l.flag==="low").length;
+  const ok=(labResults||[]).filter(l=>l.flag==="normal").length;
+  const subtitle = labResults?.length > 0
+    ? `Son tetkik · ${new Date(labResults[0].recorded_at).toLocaleDateString("tr-TR")}`
+    : "Henüz tetkik yok";
   return (
     <div className="flex-1 p-3 overflow-hidden flex flex-col gap-3">
       <div className="grid grid-cols-3 gap-3">
-        <SummaryCard label="Yüksek Değer" value={hi} total={LAB_RESULTS.length} color={C.rose}    icon={AlertTriangle}/>
-        <SummaryCard label="Düşük Değer"  value={lo} total={LAB_RESULTS.length} color={C.amber}   icon={TrendingUp}/>
-        <SummaryCard label="Normal"       value={ok} total={LAB_RESULTS.length} color={C.emerald} icon={CheckCircle2}/>
+        <SummaryCard label="Yüksek Değer" value={hi} total={labResults?.length||0} color={C.rose}    icon={AlertTriangle}/>
+        <SummaryCard label="Düşük Değer"  value={lo} total={labResults?.length||0} color={C.amber}   icon={TrendingUp}/>
+        <SummaryCard label="Normal"       value={ok} total={labResults?.length||0} color={C.emerald} icon={CheckCircle2}/>
       </div>
-      <PanelShell icon={FlaskConical} title="Laboratuvar Sonuçları" subtitle="Son tetkik · Bugün 09:15"
+      <PanelShell icon={FlaskConical} title="Laboratuvar Sonuçları" subtitle={subtitle}
                   right={
                     <div className="flex gap-1.5">
-                      <button className="flex items-center gap-1.5 px-2 py-1 rounded text-[11px]"
-                              style={{border:`1px solid ${C.border}`,color:C.textMid}}><Download size={11}/>PDF</button>
                       <button className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[11px] text-white"
-                              style={{background:`linear-gradient(135deg,${C.primary},${C.primaryDim})`}}><Plus size={11}/>Yeni Tetkik İste</button>
+                              style={{background:`linear-gradient(135deg,${C.primary},${C.primaryDim})`}}
+                              onClick={onAddLab}>
+                        <Plus size={11}/>Tetkik Ekle
+                      </button>
                     </div>
                   }>
-        <div className="flex-1 overflow-y-auto">
-          <table className="w-full text-[12px]">
-            <thead style={{background:C.bg,borderBottom:`1px solid ${C.border}`}}>
-              <tr style={{color:C.textLo}}>
-                {["Tetkik","Sonuç","Birim","Referans","Trend","Durum"].map((h,i)=>(
-                  <th key={h} className={`${i===0?"text-left":"text-right"} ${i===4?"!text-center":""} px-4 py-2.5 font-medium text-[10.5px] uppercase tracking-wider`}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {LAB_RESULTS.map((r,i)=>(
-                <tr key={r.name} style={{borderBottom:i<LAB_RESULTS.length-1?`1px solid ${C.borderSoft}`:"none",background:r.flag!=="normal"?fb(r.flag):"transparent"}}>
-                  <td className="px-4 py-2.5 text-zinc-100 font-medium">{r.name}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums font-semibold" style={{color:r.flag==="normal"?C.textHi:fc(r.flag)}}>{r.value}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums" style={{color:C.textMid}}>{r.unit}</td>
-                  <td className="px-4 py-2.5 text-right tabular-nums" style={{color:C.textLo}}>{r.ref}</td>
-                  <td className="px-4 py-2.5 text-center">
-                    <span style={{color:r.trend==="up"?C.rose:r.trend==="down"?C.accent:C.textLo}}>
-                      {r.trend==="up"?"↑":r.trend==="down"?"↓":"→"}
-                    </span>
-                  </td>
-                  <td className="px-4 py-2.5 text-right">
-                    <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold"
-                          style={{background:`${fc(r.flag)}1a`,color:fc(r.flag),border:`1px solid ${fc(r.flag)}40`}}>{fl(r.flag)}</span>
-                  </td>
+        {!labResults || labResults.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3 py-12">
+            <FlaskConical size={32} style={{color:C.textLo}}/>
+            <div className="text-center">
+              <div className="text-[13px] font-medium text-zinc-300 mb-1">Laboratuvar sonucu yok</div>
+              <div className="text-[11px]" style={{color:C.textLo}}>Bu hasta için henüz tetkik kaydı eklenmemiş.</div>
+            </div>
+            <button onClick={onAddLab}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[12px] font-medium text-white mt-1"
+                    style={{background:`linear-gradient(135deg,${C.primary},${C.primaryDim})`}}>
+              <Plus size={13}/>İlk Tetkiki Ekle
+            </button>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto">
+            <table className="w-full text-[12px]">
+              <thead style={{background:C.bg,borderBottom:`1px solid ${C.border}`}}>
+                <tr style={{color:C.textLo}}>
+                  {["Tetkik","Tarih","Sonuç","Birim","Referans","Trend","Durum"].map((h,i)=>(
+                    <th key={h} className={`${i===0?"text-left":"text-right"} ${i===5?"!text-center":""} px-4 py-2.5 font-medium text-[10.5px] uppercase tracking-wider`}>{h}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody>
+                {labResults.map((r,i)=>(
+                  <tr key={r.id} style={{borderBottom:i<labResults.length-1?`1px solid ${C.borderSoft}`:"none",background:r.flag!=="normal"?fb(r.flag):"transparent"}}>
+                    <td className="px-4 py-2.5 text-zinc-100 font-medium">{r.test_name}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums text-[11px]" style={{color:C.textLo}}>{new Date(r.recorded_at).toLocaleDateString("tr-TR")}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums font-semibold" style={{color:r.flag==="normal"?C.textHi:fc(r.flag)}}>{r.value}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums" style={{color:C.textMid}}>{r.unit||"—"}</td>
+                    <td className="px-4 py-2.5 text-right tabular-nums" style={{color:C.textLo}}>{r.ref_range||"—"}</td>
+                    <td className="px-4 py-2.5 text-center">
+                      <span style={{color:r.trend==="up"?C.rose:r.trend==="down"?C.accent:C.textLo}}>
+                        {r.trend==="up"?"↑":r.trend==="down"?"↓":"→"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <span className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold"
+                            style={{background:`${fc(r.flag)}1a`,color:fc(r.flag),border:`1px solid ${fc(r.flag)}40`}}>{fl(r.flag)}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </PanelShell>
+    </div>
+  );
+}
+
+/* ── LabModal ─────────────────────────────────────────────── */
+const LAB_PRESETS = [
+  {name:"Hemoglobin",  unit:"g/dL",   ref:"12.0–16.0"},
+  {name:"Lökosit",     unit:"10³/µL", ref:"4.0–10.0"},
+  {name:"Trombosit",   unit:"10³/µL", ref:"150–400"},
+  {name:"CRP",         unit:"mg/L",   ref:"< 5.0"},
+  {name:"Sedim (ESR)", unit:"mm/h",   ref:"< 20"},
+  {name:"LDH",         unit:"U/L",    ref:"135–225"},
+  {name:"S-100B",      unit:"µg/L",   ref:"< 0.15"},
+  {name:"Vitamin D",   unit:"ng/mL",  ref:"30–100"},
+  {name:"ALT",         unit:"U/L",    ref:"< 40"},
+  {name:"AST",         unit:"U/L",    ref:"< 40"},
+  {name:"Kreatinin",   unit:"mg/dL",  ref:"0.6–1.2"},
+  {name:"Ferritin",    unit:"ng/mL",  ref:"12–150"},
+  {name:"TSH",         unit:"mIU/L",  ref:"0.4–4.0"},
+  {name:"HbA1c",       unit:"%",      ref:"< 5.7"},
+  {name:"Diğer (manuel gir)", unit:"", ref:""},
+];
+
+function LabModal({patient, visits, onClose, onSaved}) {
+  const [preset, setPreset]       = useState(LAB_PRESETS[0]);
+  const [testName, setTestName]   = useState(LAB_PRESETS[0].name);
+  const [value, setValue]         = useState("");
+  const [unit, setUnit]           = useState(LAB_PRESETS[0].unit);
+  const [refRange, setRefRange]   = useState(LAB_PRESETS[0].ref);
+  const [flag, setFlag]           = useState("normal");
+  const [trend, setTrend]         = useState("stable");
+  const [visitId, setVisitId]     = useState("");
+  const [saving, setSaving]       = useState(false);
+
+  const handlePreset = (p) => {
+    setPreset(p);
+    if (p.name !== "Diğer (manuel gir)") setTestName(p.name);
+    else setTestName("");
+    setUnit(p.unit);
+    setRefRange(p.ref);
+  };
+
+  const handleSave = async () => {
+    if (!testName.trim() || !value) return;
+    setSaving(true);
+    try {
+      await fetch(`${API}/lab-results`, {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({
+          patient_id: patient.dbId,
+          visit_id: visitId || undefined,
+          test_name: testName.trim(),
+          value: parseFloat(value),
+          unit: unit.trim() || undefined,
+          ref_range: refRange.trim() || undefined,
+          flag,
+          trend,
+        }),
+      });
+      onSaved();
+    } catch { /* ignore */ } finally { setSaving(false); }
+  };
+
+  const inp = "w-full rounded-lg px-3 py-2 text-[12px] text-zinc-200 focus:outline-none";
+  const inpStyle = {background:C.bg, border:`1px solid ${C.border}`};
+  const lbl = "block text-[11px] font-medium mb-1";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{background:"rgba(0,0,0,0.7)"}}>
+      <div className="rounded-xl w-[480px] shadow-2xl flex flex-col" style={{background:C.surface,border:`1px solid ${C.border}`}}>
+        <div className="flex items-center justify-between px-5 py-4" style={{borderBottom:`1px solid ${C.border}`}}>
+          <div className="flex items-center gap-2">
+            <FlaskConical size={16} style={{color:C.primary}}/>
+            <span className="text-[14px] font-semibold text-zinc-100">Tetkik Sonucu Ekle</span>
+          </div>
+          <button onClick={onClose} style={{color:C.textLo}}><X size={16}/></button>
+        </div>
+        <div className="p-5 flex flex-col gap-4">
+          <div>
+            <label className={lbl} style={{color:C.textMid}}>Tetkik Seç</label>
+            <select className={inp} style={inpStyle} value={preset.name}
+                    onChange={e=>handlePreset(LAB_PRESETS.find(p=>p.name===e.target.value)||LAB_PRESETS[0])}>
+              {LAB_PRESETS.map(p=><option key={p.name} value={p.name}>{p.name}</option>)}
+            </select>
+          </div>
+          {preset.name === "Diğer (manuel gir)" && (
+            <div>
+              <label className={lbl} style={{color:C.textMid}}>Tetkik Adı</label>
+              <input className={inp} style={inpStyle} placeholder="Tetkik adı" value={testName} onChange={e=>setTestName(e.target.value)}/>
+            </div>
+          )}
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className={lbl} style={{color:C.textMid}}>Sonuç</label>
+              <input type="number" className={inp} style={inpStyle} placeholder="0.0" value={value}
+                     onChange={e=>setValue(e.target.value)}/>
+            </div>
+            <div>
+              <label className={lbl} style={{color:C.textMid}}>Birim</label>
+              <input className={inp} style={inpStyle} placeholder="g/dL" value={unit} onChange={e=>setUnit(e.target.value)}/>
+            </div>
+            <div>
+              <label className={lbl} style={{color:C.textMid}}>Referans</label>
+              <input className={inp} style={inpStyle} placeholder="12–16" value={refRange} onChange={e=>setRefRange(e.target.value)}/>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className={lbl} style={{color:C.textMid}}>Durum</label>
+              <select className={inp} style={inpStyle} value={flag} onChange={e=>setFlag(e.target.value)}>
+                <option value="normal">✓ Normal</option>
+                <option value="high">↑ Yüksek</option>
+                <option value="low">↓ Düşük</option>
+              </select>
+            </div>
+            <div>
+              <label className={lbl} style={{color:C.textMid}}>Trend</label>
+              <select className={inp} style={inpStyle} value={trend} onChange={e=>setTrend(e.target.value)}>
+                <option value="stable">→ Sabit</option>
+                <option value="up">↑ Yükseliyor</option>
+                <option value="down">↓ Düşüyor</option>
+              </select>
+            </div>
+          </div>
+          {visits && visits.length > 0 && (
+            <div>
+              <label className={lbl} style={{color:C.textMid}}>Ziyaret (opsiyonel)</label>
+              <select className={inp} style={inpStyle} value={visitId} onChange={e=>setVisitId(e.target.value)}>
+                <option value="">Ziyarete bağlama</option>
+                {visits.map(v=>(
+                  <option key={v.id} value={v.id}>
+                    {new Date(v.visit_date).toLocaleDateString("tr-TR")} — {v.complaint||"Muayene"}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+        <div className="px-5 py-4 flex justify-end gap-2" style={{borderTop:`1px solid ${C.border}`}}>
+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-[12px]"
+                  style={{border:`1px solid ${C.border}`,color:C.textMid}}>İptal</button>
+          <button onClick={handleSave} disabled={saving||!testName.trim()||!value}
+                  className="px-4 py-2 rounded-lg text-[12px] font-medium text-white disabled:opacity-50"
+                  style={{background:`linear-gradient(135deg,${C.primary},${C.primaryDim})`}}>
+            {saving?"Kaydediliyor…":"Kaydet"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1311,6 +2035,12 @@ export default function Dashboard() {
   const [pendingVisitAnalysis, setPendingVisitAnalysis] = useState(null);
   const [latestAnalysis, setLatestAnalysis] = useState(null);
   const [visits, setVisits] = useState([]);
+  const [vitals, setVitals] = useState([]);
+  const [lesionMeasurements, setLesionMeasurements] = useState([]);
+  const [showVitalsModal, setShowVitalsModal] = useState(false);
+  const [labResults, setLabResults] = useState([]);
+  const [showLabModal, setShowLabModal] = useState(false);
+  const [sidebarView, setSidebarView] = useState("hastalar");
 
   const loadPatients = () =>
     fetch(`${API}/patients`)
@@ -1327,18 +2057,39 @@ export default function Dashboard() {
 
   useEffect(() => { loadPatients().then(mapped => { if (mapped) setActivePatient(mapped[0]); }); }, []);
 
+  const loadVitalsData = (patientId) => {
+    fetch(`${API}/patients/${patientId}/vitals`)
+      .then(r => r.json())
+      .then(d => setVitals(Array.isArray(d) ? d : []))
+      .catch(() => setVitals([]));
+    fetch(`${API}/patients/${patientId}/lesion-measurements`)
+      .then(r => r.json())
+      .then(d => setLesionMeasurements(Array.isArray(d) ? d : []))
+      .catch(() => setLesionMeasurements([]));
+  };
+
+  const loadLabData = (patientId) => {
+    fetch(`${API}/patients/${patientId}/lab-results`)
+      .then(r => r.json())
+      .then(d => setLabResults(Array.isArray(d) ? d : []))
+      .catch(() => setLabResults([]));
+  };
+
   useEffect(() => {
     if (!activePatient?.dbId) {
-      setChatMessages(INITIAL_CHAT);
+      setChatMessages([]);
       setLatestAnalysis(null);
       setVisits([]);
+      setVitals([]);
+      setLesionMeasurements([]);
+      setLabResults([]);
       return;
     }
     fetch(`${API}/patients/${activePatient.dbId}/history`)
       .then(r => r.json())
       .then(data => {
         if (!Array.isArray(data) || data.length === 0) {
-          setChatMessages([{role:"ai", text:"Bu hasta için henüz analiz kaydı yok. Aşağıdaki 'PUQ.ai Raporu Al' butonuna tıklayarak ilk analizi başlatabilirsiniz.", time:now()}]);
+          setChatMessages([{role:"ai", text:`Merhaba. ${activePatient.name} için henüz analiz kaydı bulunmuyor. Yeni muayene başlatarak ilk analizi ekleyebilirsiniz.`, time:now()}]);
           setLatestAnalysis(null);
           return;
         }
@@ -1346,14 +2097,17 @@ export default function Dashboard() {
         const msgs = [];
         [...data].reverse().forEach(ar => {
           const t = new Date(ar.analyzed_at).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"});
-          msgs.push({role:"doc", text:`Analiz: ${ar.disease_name} · Güven: ${Math.round((ar.confidence||0)*100)}%`, time:t});
+          msgs.push({role:"doc", text:`Analiz: ${ar.disease_name} · Güven: %${Math.round((ar.confidence||0)*100)}`, time:t});
           (ar.ai_reports || []).forEach(rep => {
-            msgs.push({role:"ai", text: rep.report_text || "—", time:t});
+            if (rep.report_text) msgs.push({role:"ai", text: rep.report_text, time:t});
           });
         });
+        if (msgs.length === 0) {
+          msgs.push({role:"ai", text:`${activePatient.name} için analiz geçmişi yüklendi. Soru sormaya başlayabilirsiniz.`, time:now()});
+        }
         setChatMessages(msgs);
       })
-      .catch(() => { setChatMessages(INITIAL_CHAT); setLatestAnalysis(null); });
+      .catch(() => { setChatMessages([]); setLatestAnalysis(null); });
 
     fetch(`${API}/patients/${activePatient.dbId}/visits`)
       .then(r => r.json())
@@ -1371,6 +2125,9 @@ export default function Dashboard() {
         _dbId: rx.id,
       })) : []))
       .catch(() => setPrescriptions([]));
+
+    loadVitalsData(activePatient.dbId);
+    loadLabData(activePatient.dbId);
   }, [activePatient?.dbId]);
 
   const analyze = async ({complaint, image_url, visit_id}) => {
@@ -1397,6 +2154,13 @@ export default function Dashboard() {
         : "Rapor oluşturulamadı. Lütfen tekrar deneyin.";
       setLatestAnalysis({ disease_name: data.disease, confidence: data.confidence, analyzed_at: new Date().toISOString() });
       fetch(`${API}/patients/${patientId}/visits`).then(r=>r.json()).then(d=>setVisits(Array.isArray(d)?d:[])).catch(()=>{});
+      if (data.is_mock) {
+        setChatMessages(m => [...m, {
+          role: "ai",
+          text: "⚠️ NovaVision modeline ulaşılamadı — bu sonuç demo verileriyle üretilmiştir, klinik karar için kullanmayın.",
+          time: now()
+        }]);
+      }
       setChatMessages(m => [...m, { role: "ai", text: report, time: now() }]);
     } catch {
       setChatMessages(m => [...m, {
@@ -1420,7 +2184,11 @@ export default function Dashboard() {
       const res = await fetch(`${API}/chat`, {
         method: "POST",
         headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({patient_id: activePatient.dbId, message}),
+        body: JSON.stringify({
+          patient_id: activePatient.dbId,
+          message,
+          history: chatMessages.slice(-10).map(m => ({ role: m.role, text: m.text })),
+        }),
       });
       const data = await res.json();
       setChatMessages(m => [...m, {role:"ai", text: data.reply || "Yanıt alınamadı.", time:now()}]);
@@ -1460,6 +2228,11 @@ export default function Dashboard() {
     setPrescriptions(p => [rx, ...p]);
   };
 
+  const navigateToPatient = (patientId) => {
+    const found = patients.find(p => p.dbId === patientId);
+    if (found) { setActivePatient(found); setActiveTab("Özet"); setSidebarView("hastalar"); }
+  };
+
   const deletePatient = async (p) => {
     if (!window.confirm(`"${p.name}" silinsin mi? Bu işlem geri alınamaz.`)) return;
     await fetch(`${API}/patients/${p.dbId}`, { method: "DELETE" });
@@ -1483,16 +2256,36 @@ export default function Dashboard() {
       <PatientSidebar patients={patients} active={activePatient}
                       onAddPatient={() => setShowAddPatient(true)}
                       onDeletePatient={deletePatient}
-                      setActive={p => { setActivePatient(p); setActiveTab("Özet"); }}/>
+                      setActive={p => { setActivePatient(p); setActiveTab("Özet"); setSidebarView("hastalar"); }}
+                      sidebarView={sidebarView} setSidebarView={setSidebarView}/>
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <Header patient={activePatient} activeTab={activeTab} setActiveTab={setActiveTab} latestAnalysis={latestAnalysis}/>
-        <main className="flex-1 overflow-hidden flex flex-col min-h-0">
-          {activeTab==="Özet"       && <SummaryTab chatMessages={chatMessages} setMessages={setChatMessages} analyzing={analyzing} chatLoading={chatLoading} onSend={sendChat} latestAnalysis={latestAnalysis} visits={visits} onVisitClick={setSelectedVisit} onNewVisit={()=>setShowNewVisit(true)} hasPatient={!!activePatient?.dbId}/>}
-          {activeTab==="Görüntüler" && <ImagesTab/>}
-          {activeTab==="Lab"        && <LabTab/>}
-          {activeTab==="Reçeteler"  && <PrescriptionsTab prescriptions={prescriptions} openModal={openModal}/>}
-        </main>
-        <ActionBar patient={activePatient} openPrescription={openModal} onNewVisit={()=>setShowNewVisit(true)} analyzing={analyzing}/>
+        {sidebarView !== "hastalar" ? (
+          <>
+            {sidebarView === "randevular" && <RandevularPage patients={patients} onNavigateToPatient={navigateToPatient}/>}
+            {sidebarView === "arsiv"      && <ArsivPage onNavigateToPatient={navigateToPatient}/>}
+            {sidebarView === "ayarlar"    && (
+              <>
+                <div className="h-14 flex items-center px-5" style={{background:C.surface,borderBottom:`1px solid ${C.border}`}}>
+                  <span className="text-[14px] font-semibold text-zinc-300">Ayarlar</span>
+                </div>
+                <main className="flex-1 overflow-hidden flex flex-col min-h-0">
+                  <ComingSoonPage icon={Settings} title="Ayarlar" description="Sistem ve kullanıcı tercihlerini yapılandırın." color={C.primary}/>
+                </main>
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <Header patient={activePatient} activeTab={activeTab} setActiveTab={setActiveTab} latestAnalysis={latestAnalysis}/>
+            <main className="flex-1 overflow-hidden flex flex-col min-h-0">
+              {activeTab==="Özet"       && <SummaryTab chatMessages={chatMessages} setMessages={setChatMessages} analyzing={analyzing} chatLoading={chatLoading} onSend={sendChat} latestAnalysis={latestAnalysis} visits={visits} onVisitClick={setSelectedVisit} onNewVisit={()=>setShowNewVisit(true)} hasPatient={!!activePatient?.dbId} vitals={vitals} lesionMeasurements={lesionMeasurements} onAddVitals={()=>setShowVitalsModal(true)}/>}
+              {activeTab==="Görüntüler" && <ImagesTab analyses={visits.flatMap(v => v.analysis_results || [])}/>}
+              {activeTab==="Lab"        && <LabTab labResults={labResults} onAddLab={()=>setShowLabModal(true)}/>}
+              {activeTab==="Reçeteler"  && <PrescriptionsTab prescriptions={prescriptions} openModal={openModal}/>}
+            </main>
+            <ActionBar patient={activePatient} openPrescription={openModal} onNewVisit={()=>setShowNewVisit(true)} analyzing={analyzing}/>
+          </>
+        )}
       </div>
       {showModal && <PrescriptionModal onClose={closeModal} onSave={savePrescription}/>}
       {showAddPatient && <AddPatientModal onClose={()=>setShowAddPatient(false)} onSave={handlePatientAdded}/>}
@@ -1517,6 +2310,22 @@ export default function Dashboard() {
             setVisits(vs => vs.map(v => v.id === updated.id ? {...v, ...updated} : v));
             setSelectedVisit(s => ({...s, ...updated}));
           }}
+        />
+      )}
+      {showVitalsModal && activePatient?.dbId && (
+        <VitalsModal
+          patient={activePatient}
+          visits={visits}
+          onClose={()=>setShowVitalsModal(false)}
+          onSaved={()=>{ setShowVitalsModal(false); loadVitalsData(activePatient.dbId); }}
+        />
+      )}
+      {showLabModal && activePatient?.dbId && (
+        <LabModal
+          patient={activePatient}
+          visits={visits}
+          onClose={()=>setShowLabModal(false)}
+          onSaved={()=>{ setShowLabModal(false); loadLabData(activePatient.dbId); }}
         />
       )}
       {pendingVisitAnalysis && !selectedVisit && (
