@@ -62,6 +62,11 @@ class AnalyzeRequest(BaseModel):
     visit_id: str | None = None  # mevcut ziyarete bağla; yoksa otomatik oluşturulur
 
 
+class ChatRequest(BaseModel):
+    patient_id: str
+    message: str
+
+
 # ── Patients ──────────────────────────────────────────────────────────────────
 
 @app.get("/patients")
@@ -230,6 +235,50 @@ async def analyze(body: AnalyzeRequest):
         "confidence":  confidence,
         "report":      report_text,
     }
+
+
+# ── Chat (PUQ.ai serbest soru) ────────────────────────────────────────────────
+
+@app.post("/chat")
+async def chat(body: ChatRequest):
+    pt = supabase.table("patients").select("*").eq("id", body.patient_id).single().execute()
+    patient = pt.data or {}
+
+    history = supabase.table("analysis_results") \
+        .select("disease_name, confidence, analyzed_at") \
+        .eq("patient_id", body.patient_id) \
+        .order("analyzed_at", desc=True) \
+        .limit(1) \
+        .execute()
+    latest = history.data[0] if history.data else None
+
+    puq_payload = {
+        "patient_id":   body.patient_id,
+        "patient_name": patient.get("full_name", "Bilinmiyor"),
+        "question":     body.message,
+        "type":         "chat",
+        "disease":      latest["disease_name"] if latest else "Bilinmiyor",
+        "confidence":   latest["confidence"]   if latest else 0,
+    }
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        try:
+            puq_resp = await client.post(PUQAI_ENDPOINT, params=puq_payload)
+            puq_resp.raise_for_status()
+            puq_data = puq_resp.json()
+            reply = (
+                puq_data.get("content") or
+                puq_data.get("response") or
+                puq_data.get("output") or
+                str(puq_data)
+            )
+        except Exception as e:
+            reply = f"PUQ.ai bağlantı hatası: {e}"
+
+    if not reply or reply in ("null", "None", ""):
+        reply = "PUQ.ai yanıt oluşturamadı."
+
+    return {"reply": reply}
 
 
 # ── History ───────────────────────────────────────────────────────────────────
