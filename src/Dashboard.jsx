@@ -343,8 +343,11 @@ function PatientSidebar({patients, active, setActive, onAddPatient}) {
 }
 
 /* ── Header ──────────────────────────────────────────────── */
-function Header({patient,activeTab,setActiveTab}) {
-  const crit=patient.status==="critical";
+function Header({patient,activeTab,setActiveTab,latestAnalysis}) {
+  const conf = latestAnalysis ? latestAnalysis.confidence : null;
+  const crit = conf !== null ? conf >= 0.7 : patient.status === "critical";
+  const riskLabel = conf !== null ? conf.toFixed(2) : (crit ? "0.82" : "0.24");
+  const disease = latestAnalysis?.disease_name || null;
   return (
     <header className="h-14 flex items-center px-5 gap-4" style={{background:C.surface,borderBottom:`1px solid ${C.border}`}}>
       <div className="flex items-center gap-3">
@@ -364,9 +367,9 @@ function Header({patient,activeTab,setActiveTab}) {
       <div className="flex items-center gap-2 px-3 py-1 rounded-lg text-[11.5px] font-medium"
            style={crit?{background:`${C.rose}15`,border:`1px solid ${C.rose}40`,color:"#fda4af"}:{background:`${C.emerald}15`,border:`1px solid ${C.emerald}40`,color:"#6ee7b7"}}>
         {crit?<AlertTriangle size={13}/>:<ShieldCheck size={13}/>}
-        <span>PUQ.ai · {crit?"Kritik":"Stabil"}</span>
+        <span>{disease ? disease : (crit?"Kritik":"Stabil")}</span>
         <span style={{color:C.textLo}}>|</span>
-        <span style={{color:C.textMid}}>Risk: {crit?"0.82":"0.24"}</span>
+        <span style={{color:C.textMid}}>Güven: {riskLabel}</span>
       </div>
       <div className="flex-1"/>
       <div className="flex items-center gap-0.5 p-0.5 rounded-lg" style={{background:C.bg,border:`1px solid ${C.border}`}}>
@@ -394,11 +397,17 @@ function Header({patient,activeTab,setActiveTab}) {
 }
 
 /* ── NovaVisionViewer ────────────────────────────────────── */
-function NovaVisionViewer() {
+function NovaVisionViewer({latestAnalysis}) {
   const [heatmap,setHeatmap]=useState(false);
   const [overlay,setOverlay]=useState(true);
+  const disease = latestAnalysis?.disease_name || "—";
+  const conf    = latestAnalysis ? latestAnalysis.confidence : null;
+  const confPct = conf !== null ? Math.round(conf * 100) : null;
+  const analyzedAt = latestAnalysis?.analyzed_at
+    ? new Date(latestAnalysis.analyzed_at).toLocaleString("tr-TR",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"})
+    : null;
   return (
-    <PanelShell icon={Eye} title="NovaVision Vizör" subtitle="DRM-0419 · 12.3 MP · 10x" tone="accent"
+    <PanelShell icon={Eye} title="NovaVision Vizör" subtitle={analyzedAt ? `Son analiz: ${analyzedAt}` : "Henüz analiz yok"} tone="accent"
                 right={
                   <div className="flex items-center gap-1.5">
                     <ToolBtn icon={overlay?Eye:EyeOff} active={overlay} onClick={()=>setOverlay(!overlay)} label="Lezyon" tone="accent"/>
@@ -427,9 +436,9 @@ function NovaVisionViewer() {
                 </path>
               </svg>
               <div className="absolute -top-6 left-0 text-[10px] font-mono px-1.5 py-0.5 rounded text-zinc-900"
-                   style={{background:C.accent}}>lesion_a · 6.9mm · conf 0.94</div>
+                   style={{background:C.accent}}>{confPct !== null ? `conf ${conf.toFixed(2)}` : "conf —"}</div>
               <div className="absolute -bottom-5 right-0 text-[10px] font-mono px-1.5 py-0.5 rounded text-zinc-900"
-                   style={{background:C.amber}}>ABCDE: 0.71 ↑</div>
+                   style={{background:C.amber}}>{disease}</div>
             </>
           )}
         </div>
@@ -442,12 +451,13 @@ function NovaVisionViewer() {
         ))}
         <div className="absolute top-3 left-1/2 -translate-x-1/2 flex items-center gap-2 px-2.5 py-1 rounded text-[10.5px] font-mono"
              style={{background:`${C.bg}cc`,border:`1px solid ${C.border}`,color:C.textMid}}>
-          <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{background:C.accent}}/>
-          NovaVision · LIVE · 0.94 confidence
+          <span className="h-1.5 w-1.5 rounded-full animate-pulse" style={{background:latestAnalysis?C.accent:C.textLo}}/>
+          {latestAnalysis ? `NovaVision · ${disease}` : "NovaVision · Analiz bekleniyor"}
         </div>
       </div>
       <div className="grid grid-cols-4" style={{borderTop:`1px solid ${C.border}`}}>
-        {[{label:"Çap",v:"6.9",u:"mm",trend:"+0.5",crit:false},{label:"Asimetri",v:"0.71",u:"",trend:"+18%",crit:true},
+        {[{label:"Tanı",v: latestAnalysis ? disease.split(" ")[0] : "—",u:"",trend:"",crit:conf>=0.7},
+          {label:"Güven",v: confPct !== null ? confPct : "—",u:confPct!==null?"%":"",trend:"",crit:conf>=0.7},
           {label:"Sınır düzensizliği",v:"0.62",u:"",trend:"+9%",crit:false},{label:"Renk varyans",v:"4",u:"/5",trend:"+1",crit:true}]
           .map((m,i)=>(
           <div key={m.label} className="px-4 py-2.5" style={{borderLeft:i>0?`1px solid ${C.border}`:"none"}}>
@@ -465,41 +475,52 @@ function NovaVisionViewer() {
 }
 
 /* ── MedicalHistory ──────────────────────────────────────── */
-function MedicalHistory() {
+function MedicalHistory({visits}) {
+  const items = visits && visits.length > 0
+    ? visits.map((v, i) => ({
+        date: new Date(v.visit_date).toLocaleDateString("tr-TR",{day:"2-digit",month:"short",year:"numeric"}),
+        title: v.complaint || "Muayene",
+        notes: v.notes || "",
+        isCurrent: i === 0,
+      }))
+    : null;
+
+  const subtitle = items ? `${items.length} ziyaret` : "Veri bekleniyor";
+
   return (
-    <PanelShell icon={Clock} title="Longitudinal Süreç" subtitle="9 ay"
+    <PanelShell icon={Clock} title="Ziyaret Geçmişi" subtitle={subtitle}
                 right={<button className="text-[11px] hover:text-zinc-200" style={{color:C.textMid}}>Tümünü gör →</button>}>
       <div className="flex-1 overflow-y-auto px-4 py-3">
-        <div className="relative">
-          <div className="absolute left-[7px] top-1 bottom-1 w-px"
-               style={{background:`linear-gradient(to bottom,${C.border},${C.primary}66)`}}/>
-          {TIMELINE.map((item,idx)=>{
-            const cur=item.state==="current";
-            return (
-              <div key={idx} className="relative pl-7 pb-4 last:pb-0">
-                {cur
-                  ?<span className="absolute left-0 top-1 h-[15px] w-[15px] rounded-full flex items-center justify-center"
-                          style={{background:`${C.primary}33`,boxShadow:`0 0 0 4px ${C.primary}15`}}>
-                      <span className="h-[7px] w-[7px] rounded-full animate-pulse" style={{background:C.primary}}/>
-                    </span>
-                  :<span className="absolute left-[3px] top-1.5 h-[9px] w-[9px] rounded-full"
-                          style={{background:C.border,boxShadow:`0 0 0 4px ${C.surface}`}}/>
-                }
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-[12px] font-medium" style={{color:cur?"#c4b5fd":C.textHi}}>{item.title}</span>
-                  <span className="text-[10.5px] font-mono whitespace-nowrap" style={{color:C.textLo}}>{item.date}</span>
-                </div>
-                <div className="text-[11.5px] mt-0.5" style={{color:C.textMid}}>{item.diagnosis}</div>
-                <div className="mt-1.5 flex items-center gap-2">
-                  <div className="flex-1 h-1 rounded-full overflow-hidden" style={{background:C.bg}}>
-                    <div className="h-full rounded-full" style={{width:`${item.recovery}%`,background:cur?C.primary:C.textLo}}/>
+        {!items ? (
+          <div className="text-[12px] text-center py-6" style={{color:C.textLo}}>
+            Henüz ziyaret kaydı yok.
+          </div>
+        ) : (
+          <div className="relative">
+            <div className="absolute left-[7px] top-1 bottom-1 w-px"
+                 style={{background:`linear-gradient(to bottom,${C.border},${C.primary}66)`}}/>
+            {items.map((item,idx)=>{
+              const cur=item.isCurrent;
+              return (
+                <div key={idx} className="relative pl-7 pb-4 last:pb-0">
+                  {cur
+                    ?<span className="absolute left-0 top-1 h-[15px] w-[15px] rounded-full flex items-center justify-center"
+                            style={{background:`${C.primary}33`,boxShadow:`0 0 0 4px ${C.primary}15`}}>
+                        <span className="h-[7px] w-[7px] rounded-full animate-pulse" style={{background:C.primary}}/>
+                      </span>
+                    :<span className="absolute left-[3px] top-1.5 h-[9px] w-[9px] rounded-full"
+                            style={{background:C.border,boxShadow:`0 0 0 4px ${C.surface}`}}/>
+                  }
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-[12px] font-medium" style={{color:cur?"#c4b5fd":C.textHi}}>{item.title}</span>
+                    <span className="text-[10.5px] font-mono whitespace-nowrap" style={{color:C.textLo}}>{item.date}</span>
                   </div>
-                  <span className="text-[10px] tabular-nums w-9 text-right" style={{color:C.textLo}}>{item.recovery}%</span>
+                  {item.notes && <div className="text-[11.5px] mt-0.5" style={{color:C.textMid}}>{item.notes}</div>}
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </PanelShell>
   );
@@ -653,13 +674,13 @@ function ChatPanel({messages, setMessages, analyzing}) {
 }
 
 /* ── Tabs ────────────────────────────────────────────────── */
-function SummaryTab({chatMessages, setMessages, analyzing}) {
+function SummaryTab({chatMessages, setMessages, analyzing, latestAnalysis, visits}) {
   return (
     <div className="flex-1 grid grid-cols-12 gap-3 p-3 overflow-hidden">
       <div className="col-span-12 lg:col-span-8 flex flex-col gap-3 overflow-y-auto min-h-0 pr-1">
-        <NovaVisionViewer/>
+        <NovaVisionViewer latestAnalysis={latestAnalysis}/>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 min-h-[280px]">
-          <MedicalHistory/><VitalsPanel/>
+          <MedicalHistory visits={visits}/><VitalsPanel/>
         </div>
       </div>
       <div className="col-span-12 lg:col-span-4 min-h-0 flex flex-col">
@@ -1003,6 +1024,8 @@ export default function Dashboard() {
   const [showAddPatient, setShowAddPatient] = useState(false);
   const [chatMessages, setChatMessages] = useState(INITIAL_CHAT);
   const [analyzing, setAnalyzing] = useState(false);
+  const [latestAnalysis, setLatestAnalysis] = useState(null);
+  const [visits, setVisits] = useState([]);
 
   const loadPatients = () =>
     fetch(`${API}/patients`)
@@ -1022,6 +1045,8 @@ export default function Dashboard() {
   useEffect(() => {
     if (!activePatient?.dbId) {
       setChatMessages(INITIAL_CHAT);
+      setLatestAnalysis(null);
+      setVisits([]);
       return;
     }
     fetch(`${API}/patients/${activePatient.dbId}/history`)
@@ -1029,8 +1054,10 @@ export default function Dashboard() {
       .then(data => {
         if (!Array.isArray(data) || data.length === 0) {
           setChatMessages([{role:"ai", text:"Bu hasta için henüz analiz kaydı yok. Aşağıdaki 'PUQ.ai Raporu Al' butonuna tıklayarak ilk analizi başlatabilirsiniz.", time:now()}]);
+          setLatestAnalysis(null);
           return;
         }
+        setLatestAnalysis(data[0]);
         const msgs = [];
         [...data].reverse().forEach(ar => {
           const t = new Date(ar.analyzed_at).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"});
@@ -1041,7 +1068,12 @@ export default function Dashboard() {
         });
         setChatMessages(msgs);
       })
-      .catch(() => setChatMessages(INITIAL_CHAT));
+      .catch(() => { setChatMessages(INITIAL_CHAT); setLatestAnalysis(null); });
+
+    fetch(`${API}/patients/${activePatient.dbId}/visits`)
+      .then(r => r.json())
+      .then(data => setVisits(Array.isArray(data) ? data : []))
+      .catch(() => setVisits([]));
   }, [activePatient?.dbId]);
 
   const analyze = async () => {
@@ -1070,6 +1102,8 @@ export default function Dashboard() {
       const report = data.report && data.report !== "PUQ.ai rapor oluşturamadı."
         ? data.report
         : "Rapor oluşturulamadı. Lütfen tekrar deneyin.";
+      setLatestAnalysis({ disease_name: data.disease, confidence: data.confidence, analyzed_at: new Date().toISOString() });
+      fetch(`${API}/patients/${patientId}/visits`).then(r=>r.json()).then(d=>setVisits(Array.isArray(d)?d:[])).catch(()=>{});
       setChatMessages(m => [...m, {
         role: "ai",
         text: report,
@@ -1106,9 +1140,9 @@ export default function Dashboard() {
                       onAddPatient={() => setShowAddPatient(true)}
                       setActive={p => { setActivePatient(p); setActiveTab("Özet"); }}/>
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <Header patient={activePatient} activeTab={activeTab} setActiveTab={setActiveTab}/>
+        <Header patient={activePatient} activeTab={activeTab} setActiveTab={setActiveTab} latestAnalysis={latestAnalysis}/>
         <main className="flex-1 overflow-hidden flex flex-col min-h-0">
-          {activeTab==="Özet"       && <SummaryTab chatMessages={chatMessages} setMessages={setChatMessages} analyzing={analyzing}/>}
+          {activeTab==="Özet"       && <SummaryTab chatMessages={chatMessages} setMessages={setChatMessages} analyzing={analyzing} latestAnalysis={latestAnalysis} visits={visits}/>}
           {activeTab==="Görüntüler" && <ImagesTab/>}
           {activeTab==="Lab"        && <LabTab/>}
           {activeTab==="Reçeteler"  && <PrescriptionsTab prescriptions={prescriptions} openModal={openModal}/>}
