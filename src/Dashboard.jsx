@@ -252,7 +252,7 @@ function AddPatientModal({onClose, onSave}) {
 }
 
 /* ── PatientSidebar ─────────────────────────────────────── */
-function PatientSidebar({patients, active, setActive, onAddPatient}) {
+function PatientSidebar({patients, active, setActive, onAddPatient, onDeletePatient}) {
   const [search, setSearch] = useState("");
   const dot=s=>s==="critical"?"bg-rose-500":s==="monitor"?"bg-amber-400":"bg-emerald-400";
   const filtered = patients.filter(p =>
@@ -314,7 +314,7 @@ function PatientSidebar({patients, active, setActive, onAddPatient}) {
           const sel=p.id===active.id;
           return (
             <button key={p.id} onClick={()=>setActive(p)}
-                    className="w-full text-left px-2 py-2 rounded-lg flex items-center gap-2.5 transition-colors"
+                    className="group w-full text-left px-2 py-2 rounded-lg flex items-center gap-2.5 transition-colors"
                     style={sel?{background:`linear-gradient(90deg,${C.primary}20,${C.primary}05)`,border:`1px solid ${C.primary}33`}:{border:"1px solid transparent"}}
                     onMouseEnter={e=>!sel&&(e.currentTarget.style.background=C.surfaceAlt)}
                     onMouseLeave={e=>!sel&&(e.currentTarget.style.background="transparent")}>
@@ -330,6 +330,14 @@ function PatientSidebar({patients, active, setActive, onAddPatient}) {
                   {p.dbId ? p.id.slice(0,8)+"…" : p.id} · {p.lastVisit}
                 </div>
               </div>
+              {p.dbId && sel && (
+                <button onClick={e=>{e.stopPropagation(); onDeletePatient(p);}}
+                        title="Hastayı sil"
+                        className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                        style={{color:C.rose}}>
+                  <Trash2 size={11}/>
+                </button>
+              )}
             </button>
           );
         })}
@@ -838,6 +846,74 @@ function LabTab() {
   );
 }
 
+/* ── AnalyzeModal ────────────────────────────────────────── */
+function AnalyzeModal({patient, onClose, onSubmit}) {
+  const [complaint, setComplaint] = useState("");
+  const [imageUrl, setImageUrl]   = useState("");
+
+  const handleSubmit = () => {
+    onSubmit({
+      complaint: complaint.trim() || "Rutin dermatoloji kontrolü",
+      image_url: imageUrl.trim()  || "https://example.com/dermoscopy.jpg",
+    });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center"
+         style={{background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)"}}>
+      <div className="w-[480px] rounded-2xl flex flex-col" style={{background:C.surface,border:`1px solid ${C.border}`}}>
+        <div className="px-5 py-4 flex items-center justify-between" style={{borderBottom:`1px solid ${C.border}`}}>
+          <div className="flex items-center gap-2.5">
+            <div className="h-7 w-7 rounded-lg flex items-center justify-center"
+                 style={{background:`${C.accent}1a`,border:`1px solid ${C.accent}40`}}>
+              <Sparkles size={14} style={{color:C.accent}}/>
+            </div>
+            <div>
+              <div className="text-[15px] font-semibold text-zinc-100">PUQ.ai Analiz</div>
+              <div className="text-[11px]" style={{color:C.textLo}}>{patient.name}</div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{color:C.textMid}}><X size={16}/></button>
+        </div>
+        <div className="px-5 py-4 space-y-4">
+          <div>
+            <label className="text-[11px] uppercase tracking-wider block mb-1.5" style={{color:C.textLo}}>Şikayet / Notlar</label>
+            <textarea value={complaint} onChange={e=>setComplaint(e.target.value)}
+                      placeholder="Örn: Sırtta şüpheli leke, renk değişimi var…"
+                      rows={3}
+                      className="w-full rounded-lg px-3 py-2 text-[13px] text-zinc-100 placeholder:text-zinc-600 focus:outline-none resize-none"
+                      style={{background:C.bg,border:`1px solid ${C.border}`}}
+                      onFocus={e=>(e.target.style.borderColor=C.accent+"66")}
+                      onBlur={e=>(e.target.style.borderColor=C.border)}/>
+          </div>
+          <div>
+            <label className="text-[11px] uppercase tracking-wider block mb-1.5" style={{color:C.textLo}}>Görsel URL <span style={{color:C.textLo}}>(opsiyonel)</span></label>
+            <input value={imageUrl} onChange={e=>setImageUrl(e.target.value)}
+                   placeholder="https://… (boş bırakılırsa mock görsel kullanılır)"
+                   className="w-full rounded-lg px-3 py-2 text-[13px] text-zinc-100 placeholder:text-zinc-600 focus:outline-none"
+                   style={{background:C.bg,border:`1px solid ${C.border}`}}
+                   onFocus={e=>(e.target.style.borderColor=C.accent+"66")}
+                   onBlur={e=>(e.target.style.borderColor=C.border)}/>
+          </div>
+          <div className="rounded-lg p-3 text-[11px] leading-relaxed" style={{background:`${C.accent}0d`,border:`1px solid ${C.accent}25`,color:C.textMid}}>
+            NovaVision görüntü analizi (mock) + PUQ.ai AI raporu çalıştırılacak ve Supabase'e kaydedilecektir.
+          </div>
+        </div>
+        <div className="px-5 py-3 flex justify-end gap-2" style={{borderTop:`1px solid ${C.border}`}}>
+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-[13px]"
+                  style={{border:`1px solid ${C.border}`,color:C.textMid}}>İptal</button>
+          <button onClick={handleSubmit}
+                  className="px-5 py-2 rounded-lg text-[13px] font-medium text-white flex items-center gap-1.5"
+                  style={{background:`linear-gradient(135deg,${C.accent},${C.accentDim})`,boxShadow:`0 4px 12px -4px ${C.accent}80`}}>
+            <Sparkles size={14}/>Analizi Başlat
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── PrescriptionModal ───────────────────────────────────── */
 function PrescriptionModal({onClose,onSave}) {
   const [diagnosis,setDiagnosis]=useState("");
@@ -1019,11 +1095,12 @@ export default function Dashboard() {
   const [patients, setPatients] = useState(PATIENTS_MOCK);
   const [activePatient, setActivePatient] = useState(PATIENTS_MOCK[0]);
   const [activeTab, setActiveTab] = useState("Özet");
-  const [prescriptions, setPrescriptions] = useState(INITIAL_PRESCRIPTIONS);
+  const [prescriptions, setPrescriptions] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [showAddPatient, setShowAddPatient] = useState(false);
   const [chatMessages, setChatMessages] = useState(INITIAL_CHAT);
   const [analyzing, setAnalyzing] = useState(false);
+  const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
   const [latestAnalysis, setLatestAnalysis] = useState(null);
   const [visits, setVisits] = useState([]);
 
@@ -1074,9 +1151,21 @@ export default function Dashboard() {
       .then(r => r.json())
       .then(data => setVisits(Array.isArray(data) ? data : []))
       .catch(() => setVisits([]));
+
+    fetch(`${API}/patients/${activePatient.dbId}/prescriptions`)
+      .then(r => r.json())
+      .then(data => setPrescriptions(Array.isArray(data) ? data.map(rx => ({
+        id: rx.id,
+        date: new Date(rx.created_at).toLocaleDateString("tr-TR"),
+        status: rx.status,
+        diagnosis: rx.diagnosis,
+        drugs: rx.drugs || [],
+        _dbId: rx.id,
+      })) : []))
+      .catch(() => setPrescriptions([]));
   }, [activePatient?.dbId]);
 
-  const analyze = async () => {
+  const analyze = async ({complaint, image_url}) => {
     const patientId = activePatient.dbId;
     if (!patientId || analyzing) return;
 
@@ -1084,7 +1173,7 @@ export default function Dashboard() {
     setActiveTab("Özet");
     setChatMessages(m => [...m, {
       role: "doc",
-      text: `${activePatient.name} için PUQ.ai analizi başlatıldı.`,
+      text: `Şikayet: ${complaint}`,
       time: now()
     }]);
 
@@ -1092,11 +1181,7 @@ export default function Dashboard() {
       const res = await fetch(`${API}/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          patient_id: patientId,
-          image_url: "https://example.com/dermoscopy.jpg",
-          complaint: "Rutin dermatoloji kontrolü"
-        })
+        body: JSON.stringify({ patient_id: patientId, image_url, complaint })
       });
       const data = await res.json();
       const report = data.report && data.report !== "PUQ.ai rapor oluşturamadı."
@@ -1104,11 +1189,7 @@ export default function Dashboard() {
         : "Rapor oluşturulamadı. Lütfen tekrar deneyin.";
       setLatestAnalysis({ disease_name: data.disease, confidence: data.confidence, analyzed_at: new Date().toISOString() });
       fetch(`${API}/patients/${patientId}/visits`).then(r=>r.json()).then(d=>setVisits(Array.isArray(d)?d:[])).catch(()=>{});
-      setChatMessages(m => [...m, {
-        role: "ai",
-        text: report,
-        time: now()
-      }]);
+      setChatMessages(m => [...m, { role: "ai", text: report, time: now() }]);
     } catch {
       setChatMessages(m => [...m, {
         role: "ai",
@@ -1122,7 +1203,40 @@ export default function Dashboard() {
 
   const openModal = () => { setShowModal(true); setActiveTab("Reçeteler"); };
   const closeModal = () => setShowModal(false);
-  const savePrescription = rx => setPrescriptions(p => [rx, ...p]);
+  const savePrescription = async (rx) => {
+    if (activePatient?.dbId) {
+      try {
+        const res = await fetch(`${API}/prescriptions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            patient_id: activePatient.dbId,
+            diagnosis:  rx.diagnosis,
+            drugs:      rx.drugs,
+            status:     rx.status || "active",
+          }),
+        });
+        if (res.ok) {
+          const saved = await res.json();
+          setPrescriptions(p => [{
+            id: saved.id, _dbId: saved.id,
+            date: new Date(saved.created_at).toLocaleDateString("tr-TR"),
+            status: saved.status, diagnosis: saved.diagnosis, drugs: saved.drugs || [],
+          }, ...p]);
+          return;
+        }
+      } catch {}
+    }
+    setPrescriptions(p => [rx, ...p]);
+  };
+
+  const deletePatient = async (p) => {
+    if (!window.confirm(`"${p.name}" silinsin mi? Bu işlem geri alınamaz.`)) return;
+    await fetch(`${API}/patients/${p.dbId}`, { method: "DELETE" });
+    const mapped = await loadPatients();
+    if (mapped && mapped.length > 0) setActivePatient(mapped[0]);
+    else { setPatients(PATIENTS_MOCK); setActivePatient(PATIENTS_MOCK[0]); }
+  };
 
   const handlePatientAdded = async (newPatient) => {
     setShowAddPatient(false);
@@ -1138,6 +1252,7 @@ export default function Dashboard() {
     <div className="h-screen w-screen flex overflow-hidden font-sans" style={{background:C.bg,color:C.textHi}}>
       <PatientSidebar patients={patients} active={activePatient}
                       onAddPatient={() => setShowAddPatient(true)}
+                      onDeletePatient={deletePatient}
                       setActive={p => { setActivePatient(p); setActiveTab("Özet"); }}/>
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Header patient={activePatient} activeTab={activeTab} setActiveTab={setActiveTab} latestAnalysis={latestAnalysis}/>
@@ -1147,10 +1262,11 @@ export default function Dashboard() {
           {activeTab==="Lab"        && <LabTab/>}
           {activeTab==="Reçeteler"  && <PrescriptionsTab prescriptions={prescriptions} openModal={openModal}/>}
         </main>
-        <ActionBar patient={activePatient} openPrescription={openModal} onAnalyze={analyze} analyzing={analyzing}/>
+        <ActionBar patient={activePatient} openPrescription={openModal} onAnalyze={()=>setShowAnalyzeModal(true)} analyzing={analyzing}/>
       </div>
       {showModal && <PrescriptionModal onClose={closeModal} onSave={savePrescription}/>}
       {showAddPatient && <AddPatientModal onClose={()=>setShowAddPatient(false)} onSave={handlePatientAdded}/>}
+      {showAnalyzeModal && <AnalyzeModal patient={activePatient} onClose={()=>setShowAnalyzeModal(false)} onSubmit={analyze}/>}
     </div>
   );
 }
