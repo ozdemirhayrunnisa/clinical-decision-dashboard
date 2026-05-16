@@ -4,8 +4,6 @@ from pydantic import BaseModel
 from supabase import create_client, Client
 import httpx
 import os
-import ast
-import re
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -45,17 +43,23 @@ class VisitCreate(BaseModel):
     doctor_id: str | None = None
 
 
+class VisitUpdate(BaseModel):
+    complaint: str | None = None
+    notes: str | None = None
+
+
 class PrescriptionCreate(BaseModel):
     patient_id: str
     diagnosis: str
-    drugs: list  # [{"name": str, "dose": str, "duration": str}]
+    drugs: list
     status: str = "active"
 
 
 class AnalyzeRequest(BaseModel):
     patient_id: str
     image_url: str
-    complaint: str | None = None  # visit_id artık otomatik oluşturuluyor
+    complaint: str | None = None
+    visit_id: str | None = None  # mevcut ziyarete bağla; yoksa otomatik oluşturulur
 
 
 # ── Patients ──────────────────────────────────────────────────────────────────
@@ -83,20 +87,36 @@ def get_patient(patient_id: str):
 @app.delete("/patients/{patient_id}", status_code=204)
 def delete_patient(patient_id: str):
     supabase.table("patients").delete().eq("id", patient_id).execute()
-    return
 
 
 # ── Visits ────────────────────────────────────────────────────────────────────
 
 @app.get("/patients/{patient_id}/visits")
 def list_visits(patient_id: str):
-    res = supabase.table("visits").select("*").eq("patient_id", patient_id).order("visit_date", desc=True).execute()
+    res = (
+        supabase.table("visits")
+        .select("*, analysis_results(id, disease_name, confidence, analyzed_at)")
+        .eq("patient_id", patient_id)
+        .order("visit_date", desc=True)
+        .execute()
+    )
     return res.data
 
 
 @app.post("/visits", status_code=201)
 def create_visit(body: VisitCreate):
     res = supabase.table("visits").insert(body.model_dump(exclude_none=True)).execute()
+    return res.data[0]
+
+
+@app.patch("/visits/{visit_id}")
+def update_visit(visit_id: str, body: VisitUpdate):
+    data = body.model_dump(exclude_none=True)
+    if not data:
+        raise HTTPException(400, "No fields to update")
+    res = supabase.table("visits").update(data).eq("id", visit_id).execute()
+    if not res.data:
+        raise HTTPException(404, "Visit not found")
     return res.data[0]
 
 
@@ -129,14 +149,17 @@ def update_prescription_status(prescription_id: str, status: str):
 
 @app.post("/analyze")
 async def analyze(body: AnalyzeRequest):
-    # 1. Otomatik visit oluştur
-    visit_res = supabase.table("visits").insert({
-        "patient_id": body.patient_id,
-        "complaint":  body.complaint or "Görüntü analizi",
-    }).execute()
-    visit_id = visit_res.data[0]["id"]
+    # 1. Mevcut visit kullan ya da yeni oluştur
+    if body.visit_id:
+        visit_id = body.visit_id
+    else:
+        visit_res = supabase.table("visits").insert({
+            "patient_id": body.patient_id,
+            "complaint":  body.complaint or "Görüntü analizi",
+        }).execute()
+        visit_id = visit_res.data[0]["id"]
 
-    # 2. NovaVision YOLO çağrısı
+    # 2. NovaVision YOLO (mock fallback)
     async with httpx.AsyncClient(timeout=30) as client:
         try:
             nv_resp = await client.post(
@@ -151,7 +174,7 @@ async def analyze(body: AnalyzeRequest):
     disease_name = nv_data.get("disease", "Unknown")
     confidence   = nv_data.get("score", 0.0)
 
-    # 3. Analiz sonucunu Supabase'e kaydet
+    # 3. Analiz sonucunu kaydet
     ar = supabase.table("analysis_results").insert({
         "visit_id":     visit_id,
         "patient_id":   body.patient_id,
@@ -162,12 +185,11 @@ async def analyze(body: AnalyzeRequest):
     }).execute()
     analysis_id = ar.data[0]["id"]
 
-    # 4. Hasta bilgisini çek
+    # 4. Hasta bilgisi
     pt = supabase.table("patients").select("*").eq("id", body.patient_id).single().execute()
     patient = pt.data or {}
 
-    # 5. PUQ.ai agent çağrısı — analysis_id ve patient_id de gönderiliyor
-    #    PUQ.ai Insert Data adımı ai_reports tablosuna kendisi yazıyor
+    # 5. PUQ.ai raporu
     puq_payload = {
         "patient_id":   body.patient_id,
         "patient_name": patient.get("full_name", "Bilinmiyor"),
@@ -180,7 +202,6 @@ async def analyze(body: AnalyzeRequest):
     report_text = ""
     async with httpx.AsyncClient(timeout=60) as client:
         try:
-            # PUQ.ai body parse etmiyor, query string ile gönder
             puq_resp = await client.post(PUQAI_ENDPOINT, params=puq_payload)
             puq_resp.raise_for_status()
             puq_data = puq_resp.json()
@@ -215,9 +236,11 @@ async def analyze(body: AnalyzeRequest):
 
 @app.get("/patients/{patient_id}/history")
 def patient_history(patient_id: str):
-    res = supabase.table("analysis_results") \
-        .select("*, ai_reports(*)") \
-        .eq("patient_id", patient_id) \
-        .order("analyzed_at", desc=True) \
+    res = (
+        supabase.table("analysis_results")
+        .select("*, ai_reports(*)")
+        .eq("patient_id", patient_id)
+        .order("analyzed_at", desc=True)
         .execute()
+    )
     return res.data
