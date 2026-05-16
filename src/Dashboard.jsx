@@ -6,12 +6,14 @@ import {
   Heart, Thermometer, TrendingUp, Clock, CheckCircle2,
   Stethoscope, Eye, EyeOff, ZoomIn, MessageSquare, Plus, Layers,
   LogOut, X, Image as ImageIcon, FlaskConical, FileText,
-  Download, Printer, Trash2, ChevronRight, Check
+  Download, Printer, Trash2, ChevronRight, Check, Loader2
 } from "lucide-react";
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer,
   Area, AreaChart, CartesianGrid
 } from "recharts";
+
+const API = "http://localhost:8000";
 
 const C = {
   bg:"#13131f", surface:"#1c1c2e", surfaceAlt:"#22223a",
@@ -21,7 +23,7 @@ const C = {
   textHi:"#f4f4f5", textMid:"#a1a1aa", textLo:"#71717a",
 };
 
-const PATIENTS = [
+const PATIENTS_MOCK = [
   { id:"PT-2041", name:"M. Yıldız",  age:54, sex:"K", status:"critical", lastVisit:"Bugün",        initials:"MY" },
   { id:"PT-2039", name:"A. Demir",   age:38, sex:"E", status:"monitor",  lastVisit:"Dün",           initials:"AD" },
   { id:"PT-2033", name:"S. Kaya",    age:62, sex:"E", status:"stable",   lastVisit:"3 gün önce",    initials:"SK" },
@@ -102,6 +104,28 @@ const DRUG_SUGGESTIONS = [
   "Klobetazol propionat %0.05","Sefuroksim aksetil 500mg","Doksisiklin 100mg kapsül","İzotretinoin 20mg kapsül",
 ];
 
+function now() {
+  return new Date().toLocaleTimeString("tr-TR", {hour:"2-digit", minute:"2-digit"});
+}
+
+function mapApiPatient(p) {
+  const words = (p.full_name || "").split(" ");
+  const initials = words.map(w => w[0]).join("").slice(0, 2).toUpperCase();
+  const age = p.birth_date
+    ? new Date().getFullYear() - new Date(p.birth_date).getFullYear()
+    : "?";
+  return {
+    id: p.id,
+    dbId: p.id,
+    name: p.full_name,
+    age,
+    sex: p.gender || "?",
+    status: "stable",
+    lastVisit: new Date(p.created_at).toLocaleDateString("tr-TR"),
+    initials,
+  };
+}
+
 /* ── Helpers ─────────────────────────────────────────────── */
 function PanelShell({icon:Icon,title,subtitle,right,children,tone="primary"}) {
   const col=tone==="accent"?C.accent:C.primary;
@@ -141,9 +165,99 @@ function ToolBtn({icon:Icon,active,onClick,label,tone="primary"}) {
   );
 }
 
+/* ── AddPatientModal ─────────────────────────────────────── */
+function AddPatientModal({onClose, onSave}) {
+  const [form, setForm] = useState({tc_no:"", full_name:"", birth_date:"", gender:"K", phone:""});
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const set = (k,v) => setForm(f=>({...f,[k]:v}));
+
+  const handleSave = async () => {
+    if (!form.tc_no.trim() || !form.full_name.trim()) { setError("TC No ve Ad Soyad zorunludur."); return; }
+    if (!/^\d{11}$/.test(form.tc_no)) { setError("TC No 11 rakamdan oluşmalıdır."); return; }
+    setSaving(true); setError("");
+    try {
+      const body = {tc_no: form.tc_no, full_name: form.full_name};
+      if (form.birth_date) body.birth_date = form.birth_date;
+      if (form.gender)     body.gender     = form.gender;
+      if (form.phone)      body.phone      = form.phone;
+      const res = await fetch(`${API}/patients`, {
+        method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.detail || "Kayıt başarısız"); }
+      onSave(await res.json());
+    } catch(e) { setError(String(e.message)); }
+    finally    { setSaving(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center"
+         style={{background:"rgba(0,0,0,0.7)",backdropFilter:"blur(4px)"}}>
+      <div className="w-[480px] rounded-2xl flex flex-col" style={{background:C.surface,border:`1px solid ${C.border}`}}>
+        <div className="px-5 py-4 flex items-center justify-between" style={{borderBottom:`1px solid ${C.border}`}}>
+          <div className="flex items-center gap-2.5">
+            <div className="h-7 w-7 rounded-lg flex items-center justify-center"
+                 style={{background:`${C.primary}1a`,border:`1px solid ${C.primary}40`}}>
+              <Users size={14} style={{color:C.primary}}/>
+            </div>
+            <span className="text-[15px] font-semibold text-zinc-100">Yeni Hasta Ekle</span>
+          </div>
+          <button onClick={onClose} style={{color:C.textMid}}><X size={16}/></button>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          {[
+            {k:"tc_no",      label:"TC Kimlik No *",  ph:"12345678901", type:"text"},
+            {k:"full_name",  label:"Ad Soyad *",      ph:"Örn: Ayşe Demir", type:"text"},
+            {k:"birth_date", label:"Doğum Tarihi",    ph:"",            type:"date"},
+            {k:"phone",      label:"Telefon",         ph:"05XX XXX XX XX", type:"tel"},
+          ].map(({k,label,ph,type})=>(
+            <div key={k}>
+              <label className="text-[11px] uppercase tracking-wider block mb-1" style={{color:C.textLo}}>{label}</label>
+              <input type={type} value={form[k]} onChange={e=>set(k,e.target.value)} placeholder={ph}
+                     className="w-full rounded-lg px-3 py-2 text-[13px] text-zinc-100 placeholder:text-zinc-600 focus:outline-none"
+                     style={{background:C.bg,border:`1px solid ${C.border}`}}
+                     onFocus={e=>(e.target.style.borderColor=C.primary+"66")}
+                     onBlur={e=>(e.target.style.borderColor=C.border)}/>
+            </div>
+          ))}
+          <div>
+            <label className="text-[11px] uppercase tracking-wider block mb-1" style={{color:C.textLo}}>Cinsiyet</label>
+            <div className="flex gap-2">
+              {["K","E"].map(g=>(
+                <button key={g} onClick={()=>set("gender",g)}
+                        className="px-4 py-1.5 rounded-lg text-[13px] transition-colors"
+                        style={form.gender===g
+                          ?{background:`${C.primary}33`,border:`1px solid ${C.primary}66`,color:"#c4b5fd"}
+                          :{background:C.bg,border:`1px solid ${C.border}`,color:C.textMid}}>
+                  {g==="K"?"Kadın":"Erkek"}
+                </button>
+              ))}
+            </div>
+          </div>
+          {error && <div className="text-[12px] px-3 py-2 rounded-lg" style={{background:`${C.rose}15`,border:`1px solid ${C.rose}40`,color:"#fda4af"}}>{error}</div>}
+        </div>
+        <div className="px-5 py-3 flex justify-end gap-2" style={{borderTop:`1px solid ${C.border}`}}>
+          <button onClick={onClose} className="px-4 py-2 rounded-lg text-[13px]"
+                  style={{border:`1px solid ${C.border}`,color:C.textMid}}>İptal</button>
+          <button onClick={handleSave} disabled={saving}
+                  className="px-5 py-2 rounded-lg text-[13px] font-medium text-white flex items-center gap-1.5 disabled:opacity-50"
+                  style={{background:`linear-gradient(135deg,${C.primary},${C.primaryDim})`,boxShadow:`0 4px 12px -4px ${C.primary}80`}}>
+            {saving ? <Loader2 size={14} className="animate-spin"/> : <Check size={14}/>}
+            {saving ? "Kaydediliyor…" : "Kaydet"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── PatientSidebar ─────────────────────────────────────── */
-function PatientSidebar({active,setActive}) {
+function PatientSidebar({patients, active, setActive, onAddPatient}) {
+  const [search, setSearch] = useState("");
   const dot=s=>s==="critical"?"bg-rose-500":s==="monitor"?"bg-amber-400":"bg-emerald-400";
+  const filtered = patients.filter(p =>
+    p.name.toLowerCase().includes(search.toLowerCase())
+  );
   return (
     <aside className="w-72 shrink-0 flex flex-col" style={{background:C.surface,borderRight:`1px solid ${C.border}`}}>
       <div className="px-4 py-4 flex items-center gap-2.5" style={{borderBottom:`1px solid ${C.border}`}}>
@@ -167,7 +281,7 @@ function PatientSidebar({active,setActive}) {
         </div>
       </div>
       <nav className="px-2 py-3 space-y-0.5" style={{borderBottom:`1px solid ${C.border}`}}>
-        {[{icon:Users,label:"Hastalar",badge:"24",a:true},{icon:Calendar,label:"Randevular",badge:"7"},
+        {[{icon:Users,label:"Hastalar",badge:String(patients.length),a:true},{icon:Calendar,label:"Randevular",badge:"7"},
           {icon:Archive,label:"Arşiv"},{icon:Settings,label:"Ayarlar"}].map(({icon:Icon,label,badge,a})=>(
           <button key={label}
                   className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] transition-colors"
@@ -184,7 +298,7 @@ function PatientSidebar({active,setActive}) {
       <div className="p-3" style={{borderBottom:`1px solid ${C.border}`}}>
         <div className="relative">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{color:C.textLo}}/>
-          <input placeholder="Hasta ara…"
+          <input placeholder="Hasta ara…" value={search} onChange={e=>setSearch(e.target.value)}
                  className="w-full rounded-lg pl-8 pr-2 py-2 text-[12px] text-zinc-200 placeholder:text-zinc-600 focus:outline-none"
                  style={{background:C.bg,border:`1px solid ${C.border}`}}
                  onFocus={e=>(e.target.style.borderColor=C.primary+"66")}
@@ -193,10 +307,10 @@ function PatientSidebar({active,setActive}) {
       </div>
       <div className="flex-1 overflow-y-auto px-2 py-2 space-y-0.5">
         <div className="px-2 py-1.5 flex items-center justify-between">
-          <span className="text-[10px] uppercase tracking-wider font-medium" style={{color:C.textLo}}>Bugünkü liste</span>
-          <button style={{color:C.textLo}}><Plus size={12}/></button>
+          <span className="text-[10px] uppercase tracking-wider font-medium" style={{color:C.textLo}}>Hasta listesi</span>
+          <button onClick={onAddPatient} style={{color:C.textLo}} title="Yeni hasta ekle"><Plus size={12}/></button>
         </div>
-        {PATIENTS.map(p=>{
+        {filtered.map(p=>{
           const sel=p.id===active.id;
           return (
             <button key={p.id} onClick={()=>setActive(p)}
@@ -212,7 +326,9 @@ function PatientSidebar({active,setActive}) {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-[12.5px] text-zinc-100 truncate">{p.name}</div>
-                <div className="text-[10.5px] truncate" style={{color:C.textLo}}>{p.id} · {p.lastVisit}</div>
+                <div className="text-[10.5px] truncate" style={{color:C.textLo}}>
+                  {p.dbId ? p.id.slice(0,8)+"…" : p.id} · {p.lastVisit}
+                </div>
               </div>
             </button>
           );
@@ -237,11 +353,11 @@ function Header({patient,activeTab,setActiveTab}) {
         <div>
           <div className="flex items-center gap-2">
             <span className="text-[14px] font-semibold text-zinc-100">{patient.name}</span>
-            <span className="text-[11px] font-mono" style={{color:C.textLo}}>{patient.id}</span>
+            <span className="text-[11px] font-mono" style={{color:C.textLo}}>
+              {patient.age} yaş · {patient.sex==="K"?"Kadın":patient.sex==="E"?"Erkek":patient.sex}
+            </span>
           </div>
-          <div className="text-[11px]" style={{color:C.textLo}}>
-            {patient.age} yaş · {patient.sex==="K"?"Kadın":"Erkek"} · Son muayene: {patient.lastVisit}
-          </div>
+          <div className="text-[11px]" style={{color:C.textLo}}>Son muayene: {patient.lastVisit}</div>
         </div>
       </div>
       <div className="h-6 w-px" style={{background:C.border}}/>
@@ -457,19 +573,20 @@ function VitalsPanel() {
 }
 
 /* ── ChatPanel ───────────────────────────────────────────── */
-function ChatPanel() {
-  const [messages,setMessages]=useState(INITIAL_CHAT);
+function ChatPanel({messages, setMessages, analyzing}) {
   const [input,setInput]=useState("");
   const endRef=useRef(null);
   useEffect(()=>{endRef.current?.scrollIntoView({behavior:"smooth"});},[messages]);
+
   const send=()=>{
     if(!input.trim())return;
-    setMessages(m=>[...m,{role:"doc",text:input,time:"şimdi"}]);
+    setMessages(m=>[...m,{role:"doc",text:input,time:now()}]);
     setInput("");
     setTimeout(()=>{
-      setMessages(m=>[...m,{role:"ai",text:"Anlaşıldı. Veritabanını taradım — bu profilde 24 saat içinde dermoskopi + ABCDE yeniden değerlendirme önerilen klinik path %71.",time:"şimdi"}]);
+      setMessages(m=>[...m,{role:"ai",text:"Anlaşıldı. Veritabanını taradım — bu profilde 24 saat içinde dermoskopi + ABCDE yeniden değerlendirme önerilen klinik path %71.",time:now()}]);
     },700);
   };
+
   return (
     <PanelShell icon={Sparkles} title="PUQ.ai Karar Destek" subtitle="1.842 vaka indexlendi"
                 right={<button style={{color:C.textMid}}><MoreHorizontal size={14}/></button>}>
@@ -489,7 +606,7 @@ function ChatPanel() {
               {m.role==="ai"?<Sparkles size={11}/>:"DR"}
             </div>
             <div className={`max-w-[85%] ${m.role==="doc"?"items-end":""}`}>
-              <div className="text-[12px] leading-relaxed rounded-lg px-2.5 py-2"
+              <div className="text-[12px] leading-relaxed rounded-lg px-2.5 py-2 whitespace-pre-wrap"
                    style={m.role==="ai"
                      ?{background:C.surfaceAlt,border:`1px solid ${C.border}`,color:C.textHi}
                      :{background:`${C.primary}1a`,border:`1px solid ${C.primary}40`,color:"#e9d5ff"}}>
@@ -501,6 +618,17 @@ function ChatPanel() {
             </div>
           </div>
         ))}
+        {analyzing && (
+          <div className="flex gap-2">
+            <div className="h-6 w-6 shrink-0 rounded-md flex items-center justify-center"
+                 style={{background:`linear-gradient(135deg,${C.primary}33,${C.accent}33)`,border:`1px solid ${C.primary}55`}}>
+              <Loader2 size={11} className="animate-spin" style={{color:"#c4b5fd"}}/>
+            </div>
+            <div className="text-[12px] px-2.5 py-2 rounded-lg" style={{background:C.surfaceAlt,border:`1px solid ${C.border}`,color:C.textLo}}>
+              PUQ.ai raporu hazırlanıyor…
+            </div>
+          </div>
+        )}
         <div ref={endRef}/>
       </div>
       <div className="p-3" style={{borderTop:`1px solid ${C.border}`}}>
@@ -525,7 +653,7 @@ function ChatPanel() {
 }
 
 /* ── Tabs ────────────────────────────────────────────────── */
-function SummaryTab() {
+function SummaryTab({chatMessages, setMessages, analyzing}) {
   return (
     <div className="flex-1 grid grid-cols-12 gap-3 p-3 overflow-hidden">
       <div className="col-span-12 lg:col-span-8 flex flex-col gap-3 overflow-y-auto min-h-0 pr-1">
@@ -534,7 +662,9 @@ function SummaryTab() {
           <MedicalHistory/><VitalsPanel/>
         </div>
       </div>
-      <div className="col-span-12 lg:col-span-4 min-h-0 flex flex-col"><ChatPanel/></div>
+      <div className="col-span-12 lg:col-span-4 min-h-0 flex flex-col">
+        <ChatPanel messages={chatMessages} setMessages={setMessages} analyzing={analyzing}/>
+      </div>
     </div>
   );
 }
@@ -835,7 +965,7 @@ function PrescriptionsTab({prescriptions,openModal}) {
 }
 
 /* ── ActionBar ───────────────────────────────────────────── */
-function ActionBar({patient,openPrescription}) {
+function ActionBar({patient, openPrescription, onAnalyze, analyzing}) {
   const crit=patient.status==="critical";
   return (
     <div className="h-14 shrink-0 px-5 flex items-center gap-3" style={{background:C.surface,borderTop:`1px solid ${C.border}`}}>
@@ -844,44 +974,149 @@ function ActionBar({patient,openPrescription}) {
         {crit?"Acil değerlendirme gerekli":"Rutin takip"}
       </div>
       <div className="flex-1"/>
-      {[
-        {icon:FileSignature,label:"Tanıyı Onayla",style:{border:`1px solid ${C.border}`,color:C.textMid,background:"transparent"}},
-        {icon:Pill,label:"Reçete Oluştur",action:openPrescription,style:{background:`${C.primary}15`,border:`1px solid ${C.primary}50`,color:"#c4b5fd"}},
-        {icon:FileDown,label:"PUQ.ai Raporu Dışa Aktar",style:{background:`linear-gradient(135deg,${C.accent}22,${C.accent}11)`,border:`1px solid ${C.accent}55`,color:"#67e8f9"}},
-      ].map(({icon:Icon,label,style,action})=>(
-        <button key={label} onClick={action}
-                className="flex items-center gap-2 px-4 py-2 rounded-lg text-[12.5px] font-medium transition-all hover:opacity-90"
-                style={style}>
-          <Icon size={14}/>{label}
-        </button>
-      ))}
+      <button className="flex items-center gap-2 px-4 py-2 rounded-lg text-[12.5px] font-medium transition-all hover:opacity-90"
+              style={{border:`1px solid ${C.border}`,color:C.textMid,background:"transparent"}}>
+        <FileSignature size={14}/>Tanıyı Onayla
+      </button>
+      <button onClick={openPrescription}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-[12.5px] font-medium transition-all hover:opacity-90"
+              style={{background:`${C.primary}15`,border:`1px solid ${C.primary}50`,color:"#c4b5fd"}}>
+        <Pill size={14}/>Reçete Oluştur
+      </button>
+      <button onClick={onAnalyze} disabled={analyzing || !patient.dbId}
+              className="flex items-center gap-2 px-4 py-2 rounded-lg text-[12.5px] font-medium transition-all hover:opacity-90 disabled:opacity-50"
+              style={{background:`linear-gradient(135deg,${C.accent}22,${C.accent}11)`,border:`1px solid ${C.accent}55`,color:"#67e8f9"}}>
+        {analyzing ? <Loader2 size={14} className="animate-spin"/> : <FileDown size={14}/>}
+        {analyzing ? "Rapor Hazırlanıyor…" : "PUQ.ai Raporu Al"}
+      </button>
     </div>
   );
 }
 
 /* ── Dashboard (root) ────────────────────────────────────── */
 export default function Dashboard() {
-  const [activePatient,setActivePatient]=useState(PATIENTS[0]);
-  const [activeTab,setActiveTab]=useState("Özet");
-  const [prescriptions,setPrescriptions]=useState(INITIAL_PRESCRIPTIONS);
-  const [showModal,setShowModal]=useState(false);
-  const openModal=()=>{setShowModal(true);setActiveTab("Reçeteler");};
-  const closeModal=()=>setShowModal(false);
-  const savePrescription=rx=>setPrescriptions(p=>[rx,...p]);
+  const [patients, setPatients] = useState(PATIENTS_MOCK);
+  const [activePatient, setActivePatient] = useState(PATIENTS_MOCK[0]);
+  const [activeTab, setActiveTab] = useState("Özet");
+  const [prescriptions, setPrescriptions] = useState(INITIAL_PRESCRIPTIONS);
+  const [showModal, setShowModal] = useState(false);
+  const [showAddPatient, setShowAddPatient] = useState(false);
+  const [chatMessages, setChatMessages] = useState(INITIAL_CHAT);
+  const [analyzing, setAnalyzing] = useState(false);
+
+  const loadPatients = () =>
+    fetch(`${API}/patients`)
+      .then(r => r.json())
+      .then(data => {
+        if (Array.isArray(data) && data.length > 0) {
+          const mapped = data.map(mapApiPatient);
+          setPatients(mapped);
+          return mapped;
+        }
+        return null;
+      })
+      .catch(() => null);
+
+  useEffect(() => { loadPatients().then(mapped => { if (mapped) setActivePatient(mapped[0]); }); }, []);
+
+  useEffect(() => {
+    if (!activePatient?.dbId) {
+      setChatMessages(INITIAL_CHAT);
+      return;
+    }
+    fetch(`${API}/patients/${activePatient.dbId}/history`)
+      .then(r => r.json())
+      .then(data => {
+        if (!Array.isArray(data) || data.length === 0) {
+          setChatMessages([{role:"ai", text:"Bu hasta için henüz analiz kaydı yok. Aşağıdaki 'PUQ.ai Raporu Al' butonuna tıklayarak ilk analizi başlatabilirsiniz.", time:now()}]);
+          return;
+        }
+        const msgs = [];
+        [...data].reverse().forEach(ar => {
+          const t = new Date(ar.analyzed_at).toLocaleTimeString("tr-TR",{hour:"2-digit",minute:"2-digit"});
+          msgs.push({role:"doc", text:`Analiz: ${ar.disease_name} · Güven: ${Math.round((ar.confidence||0)*100)}%`, time:t});
+          (ar.ai_reports || []).forEach(rep => {
+            msgs.push({role:"ai", text: rep.report_text || "—", time:t});
+          });
+        });
+        setChatMessages(msgs);
+      })
+      .catch(() => setChatMessages(INITIAL_CHAT));
+  }, [activePatient?.dbId]);
+
+  const analyze = async () => {
+    const patientId = activePatient.dbId;
+    if (!patientId || analyzing) return;
+
+    setAnalyzing(true);
+    setActiveTab("Özet");
+    setChatMessages(m => [...m, {
+      role: "doc",
+      text: `${activePatient.name} için PUQ.ai analizi başlatıldı.`,
+      time: now()
+    }]);
+
+    try {
+      const res = await fetch(`${API}/analyze`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patient_id: patientId,
+          image_url: "https://example.com/dermoscopy.jpg",
+          complaint: "Rutin dermatoloji kontrolü"
+        })
+      });
+      const data = await res.json();
+      const report = data.report && data.report !== "PUQ.ai rapor oluşturamadı."
+        ? data.report
+        : "Rapor oluşturulamadı. Lütfen tekrar deneyin.";
+      setChatMessages(m => [...m, {
+        role: "ai",
+        text: report,
+        time: now()
+      }]);
+    } catch {
+      setChatMessages(m => [...m, {
+        role: "ai",
+        text: "Backend bağlantısı kurulamadı. localhost:8000 çalışıyor mu kontrol edin.",
+        time: now()
+      }]);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const openModal = () => { setShowModal(true); setActiveTab("Reçeteler"); };
+  const closeModal = () => setShowModal(false);
+  const savePrescription = rx => setPrescriptions(p => [rx, ...p]);
+
+  const handlePatientAdded = async (newPatient) => {
+    setShowAddPatient(false);
+    const mapped = await loadPatients();
+    if (mapped) {
+      const match = mapped.find(p => p.dbId === newPatient.id) || mapped[0];
+      setActivePatient(match);
+    }
+    setActiveTab("Özet");
+  };
+
   return (
     <div className="h-screen w-screen flex overflow-hidden font-sans" style={{background:C.bg,color:C.textHi}}>
-      <PatientSidebar active={activePatient} setActive={p=>{setActivePatient(p);setActiveTab("Özet");}}/>
+      <PatientSidebar patients={patients} active={activePatient}
+                      onAddPatient={() => setShowAddPatient(true)}
+                      setActive={p => { setActivePatient(p); setActiveTab("Özet"); }}/>
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Header patient={activePatient} activeTab={activeTab} setActiveTab={setActiveTab}/>
         <main className="flex-1 overflow-hidden flex flex-col min-h-0">
-          {activeTab==="Özet"       && <SummaryTab/>}
+          {activeTab==="Özet"       && <SummaryTab chatMessages={chatMessages} setMessages={setChatMessages} analyzing={analyzing}/>}
           {activeTab==="Görüntüler" && <ImagesTab/>}
           {activeTab==="Lab"        && <LabTab/>}
           {activeTab==="Reçeteler"  && <PrescriptionsTab prescriptions={prescriptions} openModal={openModal}/>}
         </main>
-        <ActionBar patient={activePatient} openPrescription={openModal}/>
+        <ActionBar patient={activePatient} openPrescription={openModal} onAnalyze={analyze} analyzing={analyzing}/>
       </div>
-      {showModal&&<PrescriptionModal onClose={closeModal} onSave={savePrescription}/>}
+      {showModal && <PrescriptionModal onClose={closeModal} onSave={savePrescription}/>}
+      {showAddPatient && <AddPatientModal onClose={()=>setShowAddPatient(false)} onSave={handlePatientAdded}/>}
     </div>
   );
 }
