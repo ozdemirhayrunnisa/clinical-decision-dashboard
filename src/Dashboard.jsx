@@ -2187,7 +2187,7 @@ export default function Dashboard() {
         body: JSON.stringify({
           patient_id: activePatient.dbId,
           message,
-          history: chatMessages.slice(-10).map(m => ({ role: m.role, text: m.text })),
+          history: chatMessages.slice(-10).map(m => ({ role: m.role === "ai" ? "assistant" : "user", text: m.text }))
         }),
       });
       const data = await res.json();
