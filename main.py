@@ -246,21 +246,67 @@ async def analyze(body: AnalyzeRequest):
 
 @app.post("/chat")
 async def chat(body: ChatRequest):
+    # Hasta bilgisi
     pt = supabase.table("patients").select("*").eq("id", body.patient_id).single().execute()
     patient = pt.data or {}
+    birth = patient.get("birth_date")
+    age = ""
+    if birth:
+        from datetime import date
+        try:
+            by = int(birth[:4])
+            age = f"{date.today().year - by} yaş, "
+        except Exception:
+            pass
 
-    history = supabase.table("analysis_results") \
+    # Son 3 ziyaret notu
+    visits_res = supabase.table("visits") \
+        .select("complaint, notes, visit_date") \
+        .eq("patient_id", body.patient_id) \
+        .order("visit_date", desc=True) \
+        .limit(3) \
+        .execute()
+    visits = visits_res.data or []
+
+    # Son 3 analiz sonucu
+    history_res = supabase.table("analysis_results") \
         .select("disease_name, confidence, analyzed_at") \
         .eq("patient_id", body.patient_id) \
         .order("analyzed_at", desc=True) \
-        .limit(1) \
+        .limit(3) \
         .execute()
-    latest = history.data[0] if history.data else None
+    analyses = history_res.data or []
 
+    # Zengin bağlam oluştur
+    context_lines = [
+        f"HASTA: {patient.get('full_name', 'Bilinmiyor')} ({age}{patient.get('gender', '')})",
+    ]
+
+    if analyses:
+        context_lines.append("\nANALİZ GEÇMİŞİ:")
+        for a in analyses:
+            conf = round((a.get("confidence") or 0) * 100)
+            tarih = a["analyzed_at"][:10]
+            context_lines.append(f"  - {tarih}: {a['disease_name']} (güven %{conf})")
+
+    if visits:
+        context_lines.append("\nZİYARET NOTLARI:")
+        for v in visits:
+            tarih = v["visit_date"][:10]
+            complaint = v.get("complaint") or ""
+            notes = v.get("notes") or ""
+            context_lines.append(f"  - {tarih} | Şikayet: {complaint}")
+            if notes:
+                context_lines.append(f"    Bulgular: {notes}")
+
+    context_lines.append(f"\nDOKTOR SORUSU: {body.message}")
+    full_question = "\n".join(context_lines)
+
+    latest = analyses[0] if analyses else None
     puq_payload = {
         "patient_id":   body.patient_id,
         "patient_name": patient.get("full_name", "Bilinmiyor"),
-        "question":     body.message,
+        "question":     full_question,
         "type":         "chat",
         "disease":      latest["disease_name"] if latest else "Bilinmiyor",
         "confidence":   latest["confidence"]   if latest else 0,
